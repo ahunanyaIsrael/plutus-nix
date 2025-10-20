@@ -71,6 +71,7 @@ executable vesting-exe
         wspace,
         utilities
     default-language:   Haskell2010
+    other-modules: Types
 
 test-suite wspace-tests
     import:              common-all-tests
