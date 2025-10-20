@@ -65,13 +65,25 @@ executable vesting-exe
     main-is:            Main.hs
     hs-source-dirs:     tests
     build-depends:
-        base >=4.14 && <4.15,
-        plutus-ledger-api,
-        plutus-tx,
+        base >=4.14 && <5,
         wspace,
-        utilities
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time
     default-language:   Haskell2010
-    other-modules: Types
+    other-modules:      Types
 
 test-suite wspace-tests
     import:              common-all-tests
