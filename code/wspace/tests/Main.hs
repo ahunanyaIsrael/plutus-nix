@@ -681,4 +681,4 @@ writeValidator file validator = do
 main :: IO ()
 main = do
     putStrLn "Validator compiled successfully!"
-    writeValidator "campaign-validator.plutus" validator
+    writeValidator "./assets/campaign-validator.plutus" validator
