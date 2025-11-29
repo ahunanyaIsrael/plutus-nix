@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SafeSwap Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🔐 SafeSwap Smart Contract – Detailed Tutorial & Explanation</h1>
+
+<p>
+The <code>SafeSwap</code> smart contract is designed to enable secure multi-hop token swaps 
+on Cardano using route validation, minimum-output protection, and strict deadline enforcement.
+This tutorial explains every component of the code and how it works on-chain.
+</p>
+
+<hr>
+
+<h2>📚 Table of Contents</h2>
+<ol>
+  <li><a href="#imports">📦 Imports Overview</a></li>
+  <li><a href="#datum">🗃️ Datum Structure</a></li>
+  <li><a href="#redeemer">🎮 Redeemer Structure</a></li>
+  <li><a href="#logic">🧠 Core Validator Logic</a></li>
+  <li><a href="#helpers">🔧 Helper Functions</a></li>
+  <li><a href="#compile">⚙️ Script Compilation & Addresses</a></li>
+  <li><a href="#usage">🧪 Practical Usage Example</a></li>
+  <li><a href="#testing">🧷 Testing Strategy</a></li>
+  <li><a href="#best">✅ Best Practices</a></li>
+  <li><a href="#glossary">📘 Glossary of Terms</a></li>
+</ol>
+
+<hr>
+
+<h2 id="imports">1. 📦 Imports Overview</h2>
+
+<p>The SafeSwap contract uses a mix of:</p>
+
+<h3>🔹 Plutus Ledger APIs</h3>
+<ul>
+  <li><strong>Plutus.V2.Ledger.Api</strong> — core datatypes like <code>CurrencySymbol</code>, <code>TokenName</code>, <code>ScriptContext</code>.</li>
+  <li><strong>Plutus.V2.Ledger.Contexts</strong> — utilities such as <code>valuePaidTo</code> and <code>txInfoValidRange</code>.</li>
+  <li><strong>Plutus.V1.Ledger.Interval</strong> — time interval checking.</li>
+  <li><strong>Plutus.V1.Ledger.Value</strong> — functions such as <code>valueOf</code>.</li>
+</ul>
+
+<h3>🔹 Serialization / Script Writing</h3>
+<ul>
+  <li><code>Codec.Serialise</code> — serializes validator to <code>.plutus</code> file.</li>
+  <li><code>Cardano.Api</code> — to generate Bech32 addresses.</li>
+</ul>
+
+<h3>🔹 Template Haskell</h3>
+<p>Used to compile on-chain code using:</p>
+<pre><code>$$(PlutusTx.compile [|| mkValidatorUntyped ||])</code></pre>
+
+<hr>
+
+<h2 id="datum">2. 🗃️ RouteDatum Structure</h2>
+
+<p>The datum defines all swap settings the validator must enforce:</p>
+
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><code>rdHops :: [CurrencySymbol]</code></td><td>List of pools the swap must pass through.</td></tr>
+<tr><td><code>rdInAsset</code></td><td>The asset being swapped in (currency + token).</td></tr>
+<tr><td><code>rdOutAsset</code></td><td>Final asset expected by the recipient.</td></tr>
+<tr><td><code>rdMinOut</code></td><td>Minimum tokens the user must receive (slippage protection).</td></tr>
+<tr><td><code>rdDeadline</code></td><td>Latest time the swap is allowed.</td></tr>
+<tr><td><code>rdRecipient</code></td><td>Public key hash receiving the swap output.</td></tr>
+</table>
+
+<hr>
+
+<h2 id="redeemer">3. 🎮 RouteAction (Redeemer)</h2>
+
+<p>The redeemer simply proves the path taken by the swap:</p>
+
+<pre><code>Execute { pathProof :: [CurrencySymbol] }</code></pre>
+
+<p>During validation, the contract checks:</p>
+<ul>
+  <li>The provided path contains all required hops.</li>
+  <li>The order does not matter (only existence).</li>
+</ul>
+
+<hr>
+
+<h2 id="logic">4. 🧠 Core Validator Logic</h2>
+
+<p>The critical validator logic is implemented in <code>mkValidator</code>:</p>
+
+<pre><code>Execute proof ->
+    traceIfFalse "missing hops"    (containsAllHops (rdHops dat) proof) &&
+    traceIfFalse "minOut not met"  (outputAtLeast info recipient asset minOut) &&
+    traceIfFalse "deadline passed" (beforeDeadline (rdDeadline dat) txRange)
+</code></pre>
+
+<h3>🔍 This ensures:</h3>
+<ul>
+  <li>✔️ The correct route was followed.</li>
+  <li>✔️ Minimum tokens were received (anti-slippage).</li>
+  <li>✔️ The swap was made before deadline (time validity).</li>
+</ul>
+
+<hr>
+
+<h2 id="helpers">5. 🔧 Helper Functions</h2>
+
+<h3><code>containsAllHops</code></h3>
+<p>Ensures every hop required by the datum exists in the proof list.</p>
+
+<h3><code>outputAtLeast</code></h3>
+<p>Checks that the recipient receives at least <code>rdMinOut</code> of the output asset.</p>
+
+<h3><code>beforeDeadline</code></h3>
+<p>Ensures the transaction’s valid range is below the deadline.</p>
+
+<hr>
+
+<h2 id="compile">6. ⚙️ Script Compilation & Address Generation</h2>
+
+<p>The script is compiled using:</p>
+<pre><code>validator = mkValidatorScript $$(PlutusTx.compile [|| mkValidatorUntyped ||])</code></pre>
+
+<h3>Generate script hash & addresses:</h3>
+<ul>
+  <li><strong><code>plutusValidatorHash</code></strong> — on-chain hash.</li>
+  <li><strong><code>plutusScriptAddress</code></strong> — Plutus <code>Address Credential</code>.</li>
+  <li><strong><code>toBech32ScriptAddress</code></strong> — human-readable address for wallets.</li>
+</ul>
+
+<h3>Writing the script to file:</h3>
+
+<pre><code>writeValidator "safeSwap.plutus" validator</code></pre>
+
+<hr>
+
+<h2 id="usage">7. 🧪 Practical Usage Example</h2>
+
+<pre><code>-- Save the validator script
+writeValidator "safeSwap.plutus" validator
+
+-- Print Bech32 script address (testnet)
+putStrLn $ toBech32ScriptAddress (Testnet $ NetworkMagic 1) validator
+</code></pre>
+
+<h3>💡 Example datum JSON for swap:</h3>
+<pre><code>{
+  "rdHops": ["<pool1>", "<pool2>"],
+  "rdInAsset": ["<csIn>", "<tokenIn>"],
+  "rdOutAsset": ["<csOut>", "<tokenOut>"],
+  "rdMinOut": 1500000,
+  "rdDeadline": 1735689600000,
+  "rdRecipient": "<pubKeyHash>"
+}
+</code></pre>
+
+<hr>
+
+<h2 id="testing">8. 🧷 Testing Strategy</h2>
+
+<ul>
+  <li>Ensure swaps below <code>rdMinOut</code> fail.</li>
+  <li>Test time ranges near the deadline boundary.</li>
+  <li>Try incorrect hop lists in <code>pathProof</code>.</li>
+  <li>Confirm the final output is sent only to <code>rdRecipient</code>.</li>
+</ul>
+
+<hr>
+
+<h2 id="best">9. ✅ Best Practices</h2>
+
+<ul>
+  <li>Always check <strong>slippage protection</strong> (rdMinOut).</li>
+  <li>Keep hop lists short to reduce cost.</li>
+  <li>Use meaningful trace messages for debugging.</li>
+  <li>Validate strict deadlines for safety.</li>
+</ul>
+
+<hr>
+
+<h2 id="glossary">📘 Glossary</h2>
+
+<table>
+<tr><th>Term</th><th>Definition</th></tr>
+<tr><td><strong>Route</strong></td><td>Sequence of liquidity pools involved in a multi-hop swap.</td></tr>
+<tr><td><strong>Datum</strong></td><td>On-chain configuration for swap rules.</td></tr>
+<tr><td><strong>Redeemer</strong></td><td>Runtime user input (swap path proof).</td></tr>
+<tr><td><strong>POSIXTime</strong></td><td>Time representation used in Plutus.</td></tr>
+<tr><td><strong>valuePaidTo</strong></td><td>Gets the total value paid to a given PKH.</td></tr>
+<tr><td><strong>Multi-hop swap</strong></td><td>Swapping across two or more pools.</td></tr>
+<tr><td><strong>Bech32</strong></td><td>Cardano’s human-readable address format.</td></tr>
+</table>
+
+</body>
+</html>

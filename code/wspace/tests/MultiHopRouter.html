@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MultiHopRouter.hs Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧾 Detailed Tutorial: Understanding and Using <code>MultiHopRouter.hs</code></h1>
+
+  <p>This tutorial covers the <code>MultiHopRouter.hs</code> module, which implements a multi-hop token swap router on Cardano using Plutus. It explains the data structures, on-chain validator logic, helper functions, script compilation, addresses, and practical usage.</p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports-overview">📦 Imports Overview</a></li>
+    <li><a href="#2-data-structures">🗃️ Data Structures</a></li>
+    <li><a href="#3-core-validator-logic">🧠 Core Validator Logic</a></li>
+    <li><a href="#4-helper-functions">🔧 Helper Functions</a></li>
+    <li><a href="#5-validator-compilation">⚙️ Validator Compilation & Boilerplate</a></li>
+    <li><a href="#6-validator-addresses">🏷 Validator Hash & Addresses</a></li>
+    <li><a href="#7-file-writing">💾 File Writing</a></li>
+    <li><a href="#8-practical-usage-example">🧪 Practical Usage Example</a></li>
+    <li><a href="#9-best-practices">✅ Best Practices</a></li>
+    <li><a href="#10-glossary-of-terms">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="1-imports-overview">1. 📦 Imports Overview</h2>
+
+  <h3>Plutus Modules</h3>
+  <ul>
+    <li><strong>Plutus.V2.Ledger.Api:</strong> Provides core on-chain types like <code>TxInfo</code>, <code>Validator</code>, <code>PubKeyHash</code>, and <code>ScriptContext</code>.</li>
+    <li><strong>Plutus.V2.Ledger.Contexts:</strong> Utility functions to inspect transaction context (<code>txSignedBy</code>, outputs, etc.).</li>
+    <li><strong>Plutus.V1.Ledger.Interval:</strong> Functions for time interval checks.</li>
+    <li><strong>Plutus.V1.Ledger.Value:</strong> Manipulate multi-asset values and quantities.</li>
+    <li><strong>PlutusTx & PlutusTx.Prelude:</strong> On-chain compilation, serialization, and basic Plutus functions.</li>
+  </ul>
+
+  <h3>Haskell & Serialization</h3>
+  <ul>
+    <li>Prelude, Data.Text: Standard Haskell functions.</li>
+    <li>Codec.Serialise, ByteString: Serializing scripts to write on disk or send to Cardano nodes.</li>
+  </ul>
+
+  <h3>Cardano API</h3>
+  <ul>
+    <li>Cardano.Api & Cardano.Api.Shelley: Create addresses, hashes, and handle Bech32 encoding for Plutus scripts.</li>
+  </ul>
+
+  <h2 id="2-data-structures">2. 🗃️ Data Structures</h2>
+
+  <h3><code>Hop</code></h3>
+  <p>Represents a single swap hop in a route:</p>
+  <ul>
+    <li><strong>hopPool:</strong> Pool identifier (BuiltinByteString).</li>
+    <li><strong>hopIn:</strong> Input asset (CurrencySymbol, TokenName).</li>
+    <li><strong>hopOut:</strong> Output asset (CurrencySymbol, TokenName).</li>
+    <li><strong>hopMinOut:</strong> Minimum expected output for this hop.</li>
+  </ul>
+
+  <h3><code>RouterDatum</code></h3>
+  <p>The datum type for the contract. Currently empty but can be extended.</p>
+
+  <h3><code>RouterAction</code></h3>
+  <p>Defines the action to be taken:</p>
+  <ul>
+    <li><strong>routeHops:</strong> List of <code>Hop</code> representing the multi-hop swap.</li>
+    <li><strong>routeMinOut:</strong> Minimum total output expected.</li>
+    <li><strong>routeRecipient:</strong> PubKeyHash of the recipient.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="3-core-validator-logic">3. 🧠 Core Validator Logic</h2>
+
+  <h3><code>mkValidator</code></h3>
+  <p>Ensures:</p>
+  <ul>
+    <li>At least one hop is provided.</li>
+    <li>Recipient receives at least the minimum specified amount across all hops.</li>
+  </ul>
+
+  <pre><code>{-# INLINABLE mkValidator #-}
+mkValidator :: RouterDatum -> RouterAction -> ScriptContext -> Bool
+mkValidator _dat act ctx =
+    let info = scriptContextTxInfo ctx
+        hops = routeHops act
+        recipient = routeRecipient act
+        minOut = routeMinOut act
+    in traceIfFalse "no hops provided" (length hops > 0) &&
+       traceIfFalse "recipient not receiving enough output" (recipientGetsMin info recipient hops minOut)
+</code></pre>
+
+  <h3><code>recipientGetsMin</code></h3>
+  <p>Computes total tokens sent to recipient and checks against minimum required:</p>
+  <pre><code>{-# INLINABLE recipientGetsMin #-}
+recipientGetsMin :: TxInfo -> PubKeyHash -> [Hop] -> Integer -> Bool
+recipientGetsMin info recipient hops minOut =
+    let totalOut = foldr (\hop acc -> acc + txPaidTo info recipient (hopOut hop)) 0 hops
+    in totalOut >= minOut
+</code></pre>
+
+  <hr>
+
+  <h2 id="4-helper-functions">4. 🔧 Helper Functions</h2>
+
+  <ul>
+    <li><strong>valueOfAsset:</strong> Extracts quantity of a specific asset from a <code>Value</code>.</li>
+    <li><strong>txPaidTo:</strong> Computes total output paid to a specific PubKeyHash.</li>
+    <li><strong>pubKeyHashAddress:</strong> Converts a <code>PubKeyHash</code> to a Plutus <code>Address</code>.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="5-validator-compilation">5. ⚙️ Validator Compilation & Boilerplate</h2>
+
+  <ul>
+    <li><strong>mkValidatorUntyped:</strong> Converts typed validator to <code>BuiltinData</code> for Plutus.</li>
+    <li><strong>validator:</strong> Compiled <code>Validator</code> ready to be deployed on-chain.</li>
+  </ul>
+
+  <pre><code>{-# INLINABLE mkValidatorUntyped #-}
+mkValidatorUntyped :: BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkValidatorUntyped d r c =
+    let dat = unsafeFromBuiltinData @RouterDatum d
+        red = unsafeFromBuiltinData @RouterAction r
+        ctx = unsafeFromBuiltinData @ScriptContext c
+    in if mkValidator dat red ctx then () else error ()
+
+validator :: Validator
+validator = mkValidatorScript $$(PlutusTx.compile [|| mkValidatorUntyped ||])
+</code></pre>
+
+  <hr>
+
+  <h2 id="6-validator-addresses">6. 🏷 Validator Hash & Addresses</h2>
+
+  <ul>
+    <li><strong>plutusValidatorHash:</strong> Computes the <code>ValidatorHash</code> for the script.</li>
+    <li><strong>plutusScriptAddress:</strong> Converts validator hash to a Plutus <code>Address</code>.</li>
+    <li><strong>toBech32ScriptAddress:</strong> Encodes the script address into human-readable Bech32 format using Cardano API.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="7-file-writing">7. 💾 File Writing</h2>
+
+  <p>Writes serialized validator to disk for deployment:</p>
+
+  <pre><code>writeValidator :: FilePath -> Validator -> IO ()
+writeValidator path val = do
+    LBS.writeFile path (Serialise.serialise val)
+    putStrLn $ "Validator written to: " <> path
+</code></pre>
+
+  <hr>
+
+  <h2 id="8-practical-usage-example">8. 🧪 Practical Usage Example</h2>
+
+  <pre><code>main :: IO ()
+main = do
+    let network = C.Testnet (C.NetworkMagic 1)
+    writeValidator "multiHopRouter.plutus" validator
+
+    let vh      = plutusValidatorHash validator
+        onchain = plutusScriptAddress
+        bech32  = toBech32ScriptAddress network validator
+
+    putStrLn "\n--- Multi-hop Router Validator Info ---"
+    putStrLn $ "Validator Hash (Plutus): " <> show vh
+    putStrLn $ "Plutus Script Address:    " <> show onchain
+    putStrLn $ "Bech32 Script Address:    " <> bech32
+    putStrLn "---------------------------------------"
+</code></pre>
+
+  <hr>
+
+  <h2 id="9-best-practices">9. ✅ Best Practices</h2>
+
+  <ul>
+    <li>Validate that hops are not empty and all minimum amounts are checked.</li>
+    <li>Keep the datum extensible for future features.</li>
+    <li>Test extensively on testnet for multi-hop routing correctness.</li>
+    <li>Use Bech32 addresses for user-friendly interaction and wallet integration.</li>
+    <li>Trace helpful error messages using <code>traceIfFalse</code> for debugging.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="10-glossary-of-terms">10. 📘 Glossary of Terms</h2>
+
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>Hop</strong></td><td>A single swap operation with input, output, and minimum output constraints.</td></tr>
+    <tr><td><strong>RouterDatum</strong></td><td>On-chain datum type for the multi-hop router.</td></tr>
+    <tr><td><strong>RouterAction</strong></td><td>Action submitted to the validator including hops, recipient, and minimum output.</td></tr>
+    <tr><td><strong>TxInfo</strong></td><td>Information about a transaction used in validation.</td></tr>
+    <tr><td><strong>ScriptContext</strong></td><td>Context of a script execution including transaction info.</td></tr>
+    <tr><td><strong>Validator</strong></td><td>Plutus smart contract that enforces the rules of a transaction.</td></tr>
+    <tr><td><strong>Value</strong></td><td>Represents multi-asset holdings including quantities of tokens.</td></tr>
+    <tr><td><strong>PubKeyHash</strong></td><td>Hash of a public key used for addressing and signature verification.</td></tr>
+    <tr><td><strong>Bech32</strong></td><td>Human-readable encoding for Cardano addresses.</td></tr>
+    <tr><td><strong>PlutusTx.compile</strong></td><td>Compiles Haskell code to on-chain Plutus Core script.</td></tr>
+  </table>
+
+</body>
+</html>

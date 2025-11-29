@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>StableSwap AMM Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧮 Detailed Tutorial: Understanding and Using <code>StableSwap AMM</code> Smart Contract</h1>
+
+  <p>
+    This tutorial explains your StableSwap AMM (Automated Market Maker) smart contract written in Plutus V2.  
+    The script supports swapping, adding liquidity, withdrawing liquidity, fee handling, invariant checking, and script address generation.
+  </p>
+
+  <hr>
+
+  <!-- TABLE OF CONTENTS -->
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports-overview">📦 Imports Overview</a></li>
+    <li><a href="#2-data-structures">🗃️ Data Structures</a></li>
+    <li><a href="#3-helper-functions">🔧 Helper Functions</a></li>
+    <li><a href="#4-stableswap-invariant">⚖️ StableSwap Invariant</a></li>
+    <li><a href="#5-validator-logic">🧠 Validator Logic</a></li>
+    <li><a href="#6-untyped-wrapper">🧱 Untyped Wrapper</a></li>
+    <li><a href="#7-script-compilation">⚙️ Script Compilation</a></li>
+    <li><a href="#8-address-generation">🏦 Address & Bech32 Generation</a></li>
+    <li><a href="#9-file-writing">💾 Writing the Script to File</a></li>
+    <li><a href="#10-main-function">🧪 Main Function Overview</a></li>
+    <li><a href="#11-glossary">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <!-- IMPORTS -->
+  <h2 id="1-imports-overview">1. 📦 Imports Overview</h2>
+
+  <h3>Plutus API Modules</h3>
+  <ul>
+    <li><strong>Plutus.V2.Ledger.Api</strong>: Core types (<code>Validator</code>, <code>ScriptContext</code>, <code>PubKeyHash</code>).</li>
+    <li><strong>Plutus.V2.Ledger.Contexts</strong>: Transaction information helpers.</li>
+    <li><strong>Plutus.V1.Ledger.Interval</strong>: For time-related checks.</li>
+    <li><strong>Plutus.V1.Ledger.Value</strong>: Used for multi-asset handling.</li>
+  </ul>
+
+  <h3>Serialization & Off-chain Utilities</h3>
+  <ul>
+    <li><strong>Codec.Serialise</strong>: Serializes validator to CBOR.</li>
+    <li><strong>Cardano.Api</strong>: Generates Bech32 script address.</li>
+  </ul>
+
+  <h3>PlutusTx Compilation</h3>
+  <ul>
+    <li><strong>PlutusTx</strong>: Compiler to Plutus Core.</li>
+    <li><strong>PlutusTx.Prelude</strong>: On-chain functions (<code>traceIfFalse</code>, arithmetic, etc.).</li>
+  </ul>
+
+  <hr>
+
+  <!-- DATA STRUCTURES -->
+  <h2 id="2-data-structures">2. 🗃️ Data Structures</h2>
+
+  <h3><code>PoolDatum</code></h3>
+  <p>Represents the AMM state locked at the validator.</p>
+
+  <table>
+    <tr><th>Field</th><th>Description</th></tr>
+    <tr><td><code>pdBalances</code></td><td>List of token balances in the pool.</td></tr>
+    <tr><td><code>pdAmp</code></td><td>Amplification factor (Curve-like behavior).</td></tr>
+    <tr><td><code>pdFeeBps</code></td><td>Fee expressed in basis points.</td></tr>
+    <tr><td><code>pdAdmin</code></td><td>Admin PubKeyHash.</td></tr>
+  </table>
+
+  <h3><code>PoolAction</code></h3>
+  <p>The redeemer describing the user intent.</p>
+
+  <ul>
+    <li><strong>Swap</strong>: Swap one coin for another.</li>
+    <li><strong>AddLiq</strong>: Deposit liquidity into the pool.</li>
+    <li><strong>RemoveOne</strong>: Withdraw a single asset.</li>
+    <li><strong>RemoveProportional</strong>: Withdraw proportional liquidity.</li>
+  </ul>
+
+  <hr>
+
+  <!-- HELPERS -->
+  <h2 id="3-helper-functions">3. 🔧 Helper Functions</h2>
+
+  <h3><code>getBalance</code></h3>
+  <p>Fetches token balance by index with bounds checking.</p>
+
+  <h3><code>sumList</code> & <code>prodList</code></h3>
+  <p>Compute sum or product of all pool balances.</p>
+
+  <h3><code>intPow</code></h3>
+  <p>Integer-based exponentiation suitable for on-chain execution.</p>
+
+  <h3><code>feeAmount</code></h3>
+  <p>
+    Computes fee = amount × feeBps / 10000.
+  </p>
+
+  <hr>
+
+  <!-- INVARIANT -->
+  <h2 id="4-stableswap-invariant">4. ⚖️ StableSwap Invariant</h2>
+
+  <p>The heart of a StableSwap pool is its invariant.  
+     This implementation uses a simplified generalized form:</p>
+
+  <pre><code>amp * (n^n) * sum(balances) + product(balances)</code></pre>
+
+  <p>
+    This is checked before and after swaps to ensure the pool preserves mathematical correctness.
+  </p>
+
+  <hr>
+
+  <!-- VALIDATOR -->
+  <h2 id="5-validator-logic">5. 🧠 Validator Logic</h2>
+
+  <h3><code>mkValidator :: PoolDatum → PoolAction → ScriptContext → Bool</code></h3>
+
+  <p>The validator enforces:</p>
+
+  <ul>
+    <li><strong>Valid swap indices</strong></li>
+    <li><strong>Fee constraints</strong> (≤10%)</li>
+    <li><strong>Invariant correctness</strong></li>
+    <li><strong>Bounds checks</strong> for liquidity actions</li>
+  </ul>
+
+  <h3>Main Validation Rules</h3>
+  <ul>
+    <li>Swap requires:  
+      <ul>
+        <li>Valid indices</li>
+        <li>Fee ≤ 1000bps</li>
+        <li>Invariant difference ≤ 10</li>
+      </ul>
+    </li>
+
+    <li>Add Liquidity requires:  
+      <ul><li>One deposit amount per asset in pool</li></ul>
+    </li>
+
+    <li>Remove One requires:  
+      <ul><li>Valid coin index</li></ul>
+    </li>
+
+    <li>Remove Proportional requires:  
+      <ul><li>Requested amount ≤ total pool liquidity</li></ul>
+    </li>
+  </ul>
+
+  <hr>
+
+  <!-- UNTYPED -->
+  <h2 id="6-untyped-wrapper">6. 🧱 Untyped Wrapper</h2>
+
+  <p>Plutus requires an untyped validator for on-chain execution.</p>
+
+  <pre><code>mkValidatorUntyped :: BuiltinData -> BuiltinData -> BuiltinData -> ()</code></pre>
+
+  <p>
+    This wrapper deserializes datum and redeemer, runs <code>mkValidator</code>, and throws an error if validation fails.
+  </p>
+
+  <hr>
+
+  <!-- SCRIPT -->
+  <h2 id="7-script-compilation">7. ⚙️ Script Compilation</h2>
+
+  <p>
+    Uses <code>PlutusTx.compile</code> + <code>mkValidatorScript</code> to produce a Plutus V2 validator.
+  </p>
+
+  <pre><code>validator :: Validator
+validator = mkValidatorScript $$(PlutusTx.compile [|| mkValidatorUntyped ||])</code></pre>
+
+  <hr>
+
+  <!-- ADDRESS -->
+  <h2 id="8-address-generation">🏦 8. Address & Bech32 Generation</h2>
+
+  <p>Your script exports multiple address formats:</p>
+
+  <ul>
+    <li><strong>ValidatorHash</strong> (Plutus)</li>
+    <li><strong>Plutus Script Address</strong></li>
+    <li><strong>Bech32 Script Address</strong> (Cardano-Testnet)</li>
+  </ul>
+
+  <pre><code>toBech32ScriptAddress network validator</code></pre>
+
+  <p>
+    This is used for sending funds to the pool on-chain.
+  </p>
+
+  <hr>
+
+  <!-- FILE -->
+  <h2 id="9-file-writing">💾 9. Writing the Script to File</h2>
+
+  <p>Outputs a serialized <code>.plutus</code> script:</p>
+
+  <pre><code>writeValidator "stable_swap.plutus" validator</code></pre>
+
+  <hr>
+
+  <!-- MAIN -->
+  <h2 id="10-main-function">🧪 10. Main Function Overview</h2>
+
+  <p>The <code>main</code> function:</p>
+
+  <ul>
+    <li>Creates the Testnet network object</li>
+    <li>Writes the validator to <code>stable_swap.plutus</code></li>
+    <li>Prints:
+      <ul>
+        <li>ValidatorHash</li>
+        <li>Plutus script address</li>
+        <li>Bech32 script address</li>
+      </ul>
+    </li>
+  </ul>
+
+  <hr>
+
+  <!-- GLOSSARY -->
+  <h2 id="11-glossary">📘 11. Glossary of Terms</h2>
+
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>StableSwap</strong></td><td>AMM optimized for stablecoin-to-stablecoin swaps.</td></tr>
+    <tr><td><strong>Invariant</strong></td><td>Mathematical formula that must remain true after any swap.</td></tr>
+    <tr><td><strong>Bps</strong></td><td>Basis points (1/100 of a percent).</td></tr>
+    <tr><td><strong>Validator</strong></td><td>On-chain script that approves or denies transactions.</td></tr>
+    <tr><td><strong>Redeemer</strong></td><td>Instruction specifying user intent (swap, add liquidity, etc.).</td></tr>
+    <tr><td><strong>CBOR</strong></td><td>Binary format used for deploying Plutus scripts.</td></tr>
+  </table>
+
+</body>
+</html>

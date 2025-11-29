@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CoveredCallVault.hs Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧾 Detailed Tutorial: Understanding and Using <code>CoveredCallVault.hs</code></h1>
+
+  <p>This tutorial explains the <code>CoveredCallVault.hs</code> module, which implements a covered call options vault on Cardano using Plutus V2. It details the datum, actions, validator logic, compilation, and practical usage scenarios.</p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports-overview">📦 Imports Overview</a></li>
+    <li><a href="#2-data-structures">🗃️ Data Structures</a></li>
+    <li><a href="#3-validator-logic">🧠 Validator Logic</a></li>
+    <li><a href="#4-validator-compilation">⚙️ Validator Compilation</a></li>
+    <li><a href="#5-addresses-and-hashes">🏷️ Addresses & Validator Hash</a></li>
+    <li><a href="#6-file-writing">💾 Writing the Validator</a></li>
+    <li><a href="#7-practical-usage-example">🧪 Practical Usage Example</a></li>
+    <li><a href="#8-best-practices">✅ Best Practices</a></li>
+    <li><a href="#9-glossary-of-terms">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="1-imports-overview">1. 📦 Imports Overview</h2>
+
+  <h3>Plutus Modules</h3>
+  <ul>
+    <li><strong>Plutus.V2.Ledger.Api:</strong> Provides <code>Validator</code>, <code>ScriptContext</code>, <code>POSIXTime</code>, and other ledger types.</li>
+    <li><strong>Plutus.V2.Ledger.Contexts:</strong> Utility functions for transaction context validation.</li>
+    <li><strong>Plutus.V1.Ledger.Interval:</strong> Functions for time interval validation.</li>
+    <li><strong>Plutus.V1.Ledger.Value:</strong> Functions to handle ADA and token values.</li>
+    <li><strong>PlutusTx & PlutusTx.Prelude:</strong> On-chain compilation, serialization, and Plutus core functions.</li>
+  </ul>
+
+  <h3>Haskell & Cardano API</h3>
+  <ul>
+    <li><strong>Prelude:</strong> Standard Haskell utilities for IO and strings.</li>
+    <li><strong>Cardano.Api & Cardano.Api.Shelley:</strong> Functions to generate addresses, hashes, and write Plutus scripts.</li>
+    <li><strong>Codec.Serialise:</strong> Serializes the compiled validator for deployment.</li>
+    <li><strong>Data.ByteString:</strong> Utilities for handling strict and lazy byte strings.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="2-data-structures">2. 🗃️ Data Structures</h2>
+
+  <h3><code>VaultDatum</code></h3>
+  <p>Represents the state of the covered call vault:</p>
+  <ul>
+    <li><strong>vdUnderlier</strong>: Currency symbol of the underlying asset.</li>
+    <li><strong>vdToken</strong>: Token name of the covered call token.</li>
+    <li><strong>vdStrike</strong>: Strike price of the option.</li>
+    <li><strong>vdExpiry</strong>: POSIX timestamp when the option expires.</li>
+    <li><strong>vdSharesSupply</strong>: Total number of shares in the vault.</li>
+    <li><strong>vdQueuedPremium</strong>: Premium amount queued for distribution.</li>
+    <li><strong>vdRound</strong>: Current round identifier.</li>
+  </ul>
+
+  <h3><code>VaultAction</code></h3>
+  <p>Actions that can modify the vault state:</p>
+  <ul>
+    <li><strong>Deposit Integer</strong>: Deposit funds into the vault.</li>
+    <li><strong>Withdraw Integer</strong>: Withdraw funds or shares.</li>
+    <li><strong>Write</strong>: Write a covered call option.</li>
+    <li><strong>Settle</strong>: Settle expired options and distribute premiums.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="3-validator-logic">3. 🧠 Validator Logic</h2>
+
+  <h3>Core Validation</h3>
+  <ul>
+    <li>Ensures operations happen within the valid round using <code>validRound</code>.</li>
+    <li>Checks minted or burned shares with <code>mintedSharesValid</code>.</li>
+    <li>Distributes premiums during <code>Settle</code> actions using <code>distributePremium</code>.</li>
+  </ul>
+
+  <pre><code>{-# INLINABLE mkValidator #-}
+mkValidator :: VaultDatum -> VaultAction -> ScriptContext -> Bool
+mkValidator dat action ctx =
+    case action of
+        Deposit amt -> traceIfFalse "round expired" (validRound now (vdExpiry dat)) &&
+                       traceIfFalse "mint invalid" (mintedSharesValid amt ctx)
+        Withdraw amt -> traceIfFalse "round expired" (validRound now (vdExpiry dat)) &&
+                        traceIfFalse "burn invalid" (mintedSharesValid (negate amt) ctx)
+        Write -> traceIfFalse "only during round" (validRound now (vdExpiry dat))
+        Settle -> traceIfFalse "not expired yet" (not $ validRound now (vdExpiry dat)) &&
+                  traceIfFalse "premium distribution failed" (distributePremium info dat)
+  where
+    info = scriptContextTxInfo ctx
+    now  = case ivTo (txInfoValidRange info) of
+             UpperBound (Finite t) _ -> t
+             _                        -> 0
+</code></pre>
+
+  <hr>
+
+  <h2 id="4-validator-compilation">4. ⚙️ Validator Compilation</h2>
+  <ul>
+    <li><strong>mkValidatorUntyped:</strong> Wraps the typed validator for on-chain Plutus execution.</li>
+    <li><strong>validator:</strong> Compiles <code>mkValidatorUntyped</code> into a <code>Validator</code>.</li>
+  </ul>
+
+  <pre><code>{-# INLINABLE mkValidatorUntyped #-}
+mkValidatorUntyped :: BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkValidatorUntyped d r c =
+    let dat = unsafeFromBuiltinData @VaultDatum d
+        red = unsafeFromBuiltinData @VaultAction r
+        ctx = unsafeFromBuiltinData @ScriptContext c
+    in if mkValidator dat red ctx then () else error ()
+
+validator :: Validator
+validator = mkValidatorScript $$(PlutusTx.compile [|| mkValidatorUntyped ||])
+</code></pre>
+
+  <hr>
+
+  <h2 id="5-addresses-and-hashes">5. 🏷️ Addresses & Validator Hash</h2>
+  <ul>
+    <li><strong>plutusValidatorHash:</strong> Generates the validator hash from the compiled validator.</li>
+    <li><strong>plutusScriptAddress:</strong> Produces the on-chain script address.</li>
+    <li><strong>toBech32ScriptAddress:</strong> Converts the script address into human-readable Bech32 format.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="6-file-writing">6. 💾 Writing the Validator</h2>
+  <p>Write the validator to a file for deployment:</p>
+  <pre><code>writeValidator :: FilePath -> Validator -> IO ()
+writeValidator path val = do
+    LBS.writeFile path (Serialise.serialise val)
+    putStrLn $ "Validator written to: " <> path
+</code></pre>
+
+  <hr>
+
+  <h2 id="7-practical-usage-example">7. 🧪 Practical Usage Example</h2>
+  <pre><code>main :: IO ()
+main = do
+    let network = C.Testnet (C.NetworkMagic 1)
+
+    writeValidator "vault.plutus" validator
+
+    let vh      = plutusValidatorHash validator
+        onchain = plutusScriptAddress
+        bech32  = toBech32ScriptAddress network validator
+
+    putStrLn "\n--- Covered Call Vault Validator Info ---"
+    putStrLn $ "Validator Hash (Plutus): " <> P.show vh
+    putStrLn $ "Plutus Script Address:    " <> P.show onchain
+    putStrLn $ "Bech32 Script Address:    " <> bech32
+    putStrLn "----------------------------------------"
+    putStrLn "Covered Call Vault validator generated successfully."
+</code></pre>
+
+  <hr>
+
+  <h2 id="8-best-practices">8. ✅ Best Practices</h2>
+  <ul>
+    <li>Validate all actions within the correct round and expiry window.</li>
+    <li>Verify minted and burned shares properly to maintain token supply integrity.</li>
+    <li>Ensure premium distribution logic is tested thoroughly.</li>
+    <li>Serialize and store the validator safely for deployment on testnet/mainnet.</li>
+    <li>Test edge cases: expired rounds, invalid deposits/withdrawals, and premium distribution failures.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="9-glossary-of-terms">9. 📘 Glossary of Terms</h2>
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>VaultDatum</strong></td><td>On-chain state of the covered call vault including underlier, strike, expiry, and shares.</td></tr>
+    <tr><td><strong>VaultAction</strong></td><td>Actions modifying the vault: Deposit, Withdraw, Write, Settle.</td></tr>
+    <tr><td><strong>POSIXTime</strong></td><td>Timestamp used to enforce round expiry.</td></tr>
+    <tr><td><strong>Validator</strong></td><td>Smart contract enforcing the rules of the covered call vault.</td></tr>
+    <tr><td><strong>Bech32 Address</strong></td><td>Human-readable Cardano address for the validator script.</td></tr>
+    <tr><td><strong>plutusValidatorHash</strong></td><td>Hash of the compiled validator used to identify the script on-chain.</td></tr>
+    <tr><td><strong>ScriptContext</strong></td><td>Context of the current transaction being validated.</td></tr>
+    <tr><td><strong>TxInfo</strong></td><td>Details of the transaction extracted from the script context.</td></tr>
+  </table>
+
+</body>
+</html>

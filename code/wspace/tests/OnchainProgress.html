@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>OnchainProgressCredential.hs Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧾 Detailed Tutorial: Understanding and Using <code>OnchainProgressCredential.hs</code></h1>
+
+  <p>This tutorial covers the <code>OnchainProgressCredential.hs</code> module. It explains the on-chain minting policy for issuing "Onchain Progress Credentials" (NFT-like tokens), the off-chain endpoints for issuing and revoking credentials, and practical usage scenarios.</p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports-overview">📦 Imports Overview</a></li>
+    <li><a href="#2-data-structures">🗃️ Data Structures</a></li>
+    <li><a href="#3-on-chain-minting-policy">🧠 On-Chain Minting Policy</a></li>
+    <li><a href="#4-off-chain-endpoints">🔌 Off-Chain Endpoints</a></li>
+    <li><a href="#5-helper-functions">🔧 Helper Functions</a></li>
+    <li><a href="#6-practical-usage-example">🧪 Practical Usage Example</a></li>
+    <li><a href="#7-testing-strategy">🧷 Testing Strategy</a></li>
+    <li><a href="#8-best-practices">✅ Best Practices</a></li>
+    <li><a href="#9-glossary-of-terms">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="1-imports-overview">1. 📦 Imports Overview</h2>
+
+  <h3>Plutus & Ledger Modules</h3>
+  <ul>
+    <li><strong>Plutus.Contract:</strong> Provides the contract monad for off-chain logic, endpoint handling, and transaction submission.</li>
+    <li><strong>PlutusTx & PlutusTx.Prelude:</strong> Enable on-chain compilation, serialization, and basic Plutus functions.</li>
+    <li><strong>Ledger & Ledger.Value:</strong> Provides on-chain data types, addresses, currency symbols, and value manipulation.</li>
+    <li><strong>Ledger.Constraints:</strong> Used to construct transactions with minting, payments, and signatures.</li>
+    <li><strong>Ledger.Typed.Scripts:</strong> Wraps minting policies into Plutus scripts.</li>
+  </ul>
+
+  <h3>Haskell Utility Modules</h3>
+  <ul>
+    <li>Prelude, Data.Text, Data.Map, GHC.Generics: Standard Haskell libraries for text, maps, JSON, and generic derivation.</li>
+    <li>Control.Monad: For sequencing off-chain actions with <code>void</code> and <code>forever</code>.</li>
+  </ul>
+
+  <h2 id="2-data-structures">2. 🗃️ Data Structures</h2>
+
+  <h3><code>OPCParams</code></h3>
+  <p>Parameters for the minting policy:</p>
+  <ul>
+    <li><strong>opIssuer</strong>: The <code>PubKeyHash</code> of the issuer authorized to mint/revoke credentials.</li>
+  </ul>
+
+  <h3><code>OPCAction</code></h3>
+  <p>Specifies minting policy actions:</p>
+  <ul>
+    <li><strong>MintCredential</strong>: Mint a new credential token.</li>
+    <li><strong>BurnCredential</strong>: Burn (revoke) an existing credential token.</li>
+  </ul>
+
+  <h3><code>IssueParams</code></h3>
+  <ul>
+    <li><strong>ipRecipient</strong>: Recipient's payment key hash.</li>
+    <li><strong>ipCredentialId</strong>: Identifier for the credential.</li>
+    <li><strong>ipProgress</strong>: Progress percentage (0–100).</li>
+    <li><strong>ipMetadataURI</strong>: Optional URI for off-chain metadata.</li>
+  </ul>
+
+  <h3><code>RevokeParams</code></h3>
+  <ul>
+    <li><strong>rpCredentialName</strong>: Name of the credential token to burn.</li>
+  </ul>
+
+  <h2 id="3-on-chain-minting-policy">3. 🧠 On-Chain Minting Policy</h2>
+
+  <h3><code>mkPolicy</code></h3>
+  <p><strong>Purpose:</strong> Ensures only the authorized issuer can mint or burn exactly one token per transaction.</p>
+
+  <ul>
+    <li>Checks issuer's signature using <code>txSignedBy</code>.</li>
+    <li>Validates that minting produces exactly one token of any <code>TokenName</code>.</li>
+    <li>Validates that burning consumes exactly one token of any <code>TokenName</code>.</li>
+  </ul>
+
+  <pre><code>{-# INLINABLE mkPolicy #-}
+mkPolicy :: OPCParams -> OPCAction -> ScriptContext -> Bool
+mkPolicy params action ctx =
+  case action of
+    MintCredential -> traceIfFalse "issuer signature missing" signedByIssuer
+                     && traceIfFalse "must mint exactly one token" checkMintAmount
+    BurnCredential -> traceIfFalse "issuer signature missing" signedByIssuer
+                     && traceIfFalse "must burn exactly one token" checkBurnAmount
+</code></pre>
+
+  <h3><code>policy</code> & <code>curSymbol</code></h3>
+  <ul>
+    <li><strong>policy</strong>: Wraps <code>mkPolicy</code> as a minting policy script for deployment.</li>
+    <li><strong>curSymbol</strong>: Computes the <code>CurrencySymbol</code> of the minted tokens.</li>
+  </ul>
+
+  <h2 id="4-off-chain-endpoints">4. 🔌 Off-Chain Endpoints</h2>
+
+  <h3>Issue Endpoint</h3>
+  <p>Mints a new credential token and sends it to the recipient.</p>
+  <pre><code>issue :: OPCParams -> IssueParams -> Contract w s Text ()
+issue params ip = do
+  let tn  = mkTokenName (ipCredentialId ip) (ipProgress ip)
+      val = singleton (curSymbol params) tn 1
+      tx  = Constraints.mustMintValueWithRedeemer (Redeemer $ PlutusTx.toBuiltinData MintCredential) val
+            <> Constraints.mustPayToPubKey (ipRecipient ip) val
+            <> Constraints.mustBeSignedBy (opIssuer params)
+  ledgerTx <- submitTxConstraintsWith @Void lookups tx
+  void $ awaitTxConfirmed $ getCardanoTxId ledgerTx</code></pre>
+
+  <h3>Revoke Endpoint</h3>
+  <p>Burns an existing credential token.</p>
+  <pre><code>revoke :: OPCParams -> RevokeParams -> Contract w s Text ()
+revoke params rp = do
+  let tn  = TokenName $ encodeUtf8 $ rpCredentialName rp
+      val = singleton (curSymbol params) tn (-1)
+      tx  = Constraints.mustMintValueWithRedeemer (Redeemer $ PlutusTx.toBuiltinData BurnCredential) val
+            <> Constraints.mustBeSignedBy (opIssuer params)
+  ledgerTx <- submitTxConstraintsWith @Void lookups tx
+  void $ awaitTxConfirmed $ getCardanoTxId ledgerTx</code></pre>
+
+  <h3>Endpoints Schema</h3>
+  <ul>
+    <li><code>Endpoint "issue" IssueParams</code>: Issue a new credential.</li>
+    <li><code>Endpoint "revoke" RevokeParams</code>: Revoke (burn) a credential.</li>
+  </ul>
+
+  <h2 id="5-helper-functions">5. 🔧 Helper Functions</h2>
+  <ul>
+    <li><strong><code>mkTokenName</code></strong>: Encodes credential id and progress into a token name.</li>
+    <li><strong><code>curSymbol</code></strong>: Returns the currency symbol of the minting policy.</li>
+    <li><strong><code>toBech32ScriptAddress</code></strong>: Converts the policy script into a human-readable Cardano address.</li>
+    <li><strong><code>writeValidator</code></strong>: Writes the compiled policy to a file.</li>
+  </ul>
+
+  <h2 id="6-practical-usage-example">6. 🧪 Practical Usage Example</h2>
+
+  <pre><code>-- Construct OPCParams from issuer PubKeyHash
+let params = OPCParams { opIssuer = "<issuer-pkh>" }
+
+-- Issue a credential
+callEndpoint @"issue" params IssueParams
+  { ipRecipient   = "<recipient-pkh>"
+  , ipCredentialId = "course-001"
+  , ipProgress    = 50
+  , ipMetadataURI = Just "ipfs://..."
+  }
+
+-- Revoke a credential
+callEndpoint @"revoke" params RevokeParams
+  { rpCredentialName = "course-001|p=50"
+  }</code></pre>
+
+  <h2 id="7-testing-strategy">7. 🧷 Testing Strategy</h2>
+  <ul>
+    <li>Test that only the authorized issuer can mint/burn tokens.</li>
+    <li>Confirm minting produces exactly one token.</li>
+    <li>Confirm burning consumes exactly one token.</li>
+    <li>Simulate off-chain calls using PAB or testnet to ensure token names and progress are correctly encoded.</li>
+  </ul>
+
+  <h2 id="8-best-practices">8. ✅ Best Practices</h2>
+  <ul>
+    <li>Always verify the issuer signature before minting or burning tokens.</li>
+    <li>Encode meaningful token names (credential id + progress) for off-chain tracking.</li>
+    <li>Publish token metadata off-chain (CIP-25 / IPFS).</li>
+    <li>Consider script addresses or on-chain restrictions for soulbound (non-transferable) tokens.</li>
+    <li>Thoroughly test on testnet before mainnet deployment.</li>
+  </ul>
+
+  <h2 id="9-glossary-of-terms">9. 📘 Glossary of Terms</h2>
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>OPCParams</strong></td><td>Parameters specifying the authorized issuer PubKeyHash for the minting policy.</td></tr>
+    <tr><td><strong>OPCAction</strong></td><td>Action to mint or burn a credential token.</td></tr>
+    <tr><td><strong>Minting Policy</strong></td><td>On-chain script controlling minting and burning of tokens.</td></tr>
+    <tr><td><strong>TokenName</strong></td><td>Identifier of a token, here encoding credential id and progress.</td></tr>
+    <tr><td><strong>PubKeyHash</strong></td><td>Hash of a public key used to authorize transactions.</td></tr>
+    <tr><td><strong>submitTxConstraintsWith</strong></td><td>Function to submit a transaction with given constraints and lookups.</td></tr>
+    <tr><td><strong>Redeemer</strong></td><td>Data specifying the action (Mint or Burn) when executing a minting policy.</td></tr>
+    <tr><td><strong>CurrencySymbol</strong></td><td>Unique identifier for a group of tokens governed by a minting policy.</td></tr>
+    <tr><td><strong>Bech32</strong></td><td>Human-readable encoding format for Cardano addresses.</td></tr>
+    <tr><td><strong>PAB / Testnet</strong></td><td>Environments to test Plutus contracts before mainnet deployment.</td></tr>
+  </table>
+
+</body>
+</html>

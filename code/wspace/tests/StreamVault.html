@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Streaming Payment Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>💧 Streaming Payment Smart Contract Tutorial</h1>
+
+  <p>
+    This guide explains the full <code>StreamDatum</code> / <code>StreamRedeemer</code> smart contract.
+    It enables real-time token streaming between a sender and a recipient — similar to “continuous payroll”.
+  </p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+
+  <ol>
+    <li><a href="#imports">📦 Imports Overview</a></li>
+    <li><a href="#datum">🗃️ Data Structures</a></li>
+    <li><a href="#helpers">⏱️ Time Helpers</a></li>
+    <li><a href="#validator">🧠 Validator Logic</a></li>
+    <li><a href="#wrapper">🧩 Validator Wrapper</a></li>
+    <li><a href="#json">📝 Writing Cardano-CLI Script JSON</a></li>
+    <li><a href="#mainfn">⚙️ Main Function</a></li>
+    <li><a href="#example">🧪 Practical Usage Example</a></li>
+    <li><a href="#testing">🧷 Testing Strategy</a></li>
+    <li><a href="#best">✅ Best Practices</a></li>
+    <li><a href="#glossary">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <!-- IMPORTS -->
+  <h2 id="imports">1. 📦 Imports Overview</h2>
+
+  <p>This contract relies on key Plutus V2 modules for datum serialization, interval checks, and signature verification.</p>
+
+  <h3>Plutus Modules</h3>
+  <ul>
+    <li><strong>Plutus.V2.Ledger.Api:</strong> Provides the core types such as <code>Validator</code>, <code>ScriptContext</code>, <code>PubKeyHash</code>, <code>POSIXTime</code>.</li>
+    <li><strong>Plutus.V2.Ledger.Contexts:</strong> Utility functions for accessing transaction info (signatures, validity ranges).</li>
+    <li><strong>PlutusTx.Prelude:</strong> Plutus-safe logic (no partial functions).</li>
+    <li><strong>PlutusTx:</strong> Needed for <code>makeIsDataIndexed</code> and <code>compiled</code> functions.</li>
+  </ul>
+
+  <h3>Serialization Modules</h3>
+  <ul>
+    <li><strong>Codec.Serialise:</strong> For CBOR encoding the validator.</li>
+    <li><strong>Data.Aeson:</strong> For generating cardano-cli-compatible JSON files.</li>
+  </ul>
+
+  <hr>
+
+  <!-- DATA -->
+  <h2 id="datum">2. 🗃️ Data Structures</h2>
+
+  <h3><code>StreamDatum</code></h3>
+
+  <p>This datum stores all information about the active streaming payment:</p>
+
+  <ul>
+    <li><strong>sdSender</strong> – Wallet paying the stream.</li>
+    <li><strong>sdRecipient</strong> – Wallet receiving streamed tokens.</li>
+    <li><strong>sdRatePerSec</strong> – Tokens unlocked per second.</li>
+    <li><strong>sdStart</strong> – POSIX start time.</li>
+    <li><strong>sdEnd</strong> – POSIX end time.</li>
+    <li><strong>sdClaimed</strong> – Total amount already withdrawn.</li>
+  </ul>
+
+  <h3><code>StreamRedeemer</code></h3>
+
+  <ul>
+    <li><strong>Claim</strong> – Recipient withdraws what has accrued.</li>
+    <li><strong>Cancel</strong> – Sender cancels the stream.</li>
+  </ul>
+
+  <hr>
+
+  <!-- HELPERS -->
+  <h2 id="helpers">3. ⏱️ Time Helpers</h2>
+
+  <p>These helper functions calculate how much of the stream has accrued, based on the current transaction time.</p>
+
+  <h3>⏳ <code>getUpperPOSIX</code></h3>
+  <p>Retrieves the upper range of the transaction validity interval.</p>
+
+  <h3>🕒 <code>posixDiffSeconds</code></h3>
+  <p>Converts milliseconds → seconds (Plutus timestamps use ms).</p>
+
+  <h3>📏 <code>clamp</code></h3>
+  <p>Ensures time stays within <code>[start, end]</code>.</p>
+
+  <h3>💰 <code>accruedAt</code></h3>
+  <p>Calculates total tokens that should be unlocked at a given time.</p>
+
+  <hr>
+
+  <!-- VALIDATOR -->
+  <h2 id="validator">4. 🧠 Validator Logic</h2>
+
+  <p>
+    The core validator <code>validateStream</code> defines how the streaming contract
+    may be interacted with depending on the redeemer.
+  </p>
+
+  <h3>🔹 For <code>Claim</code>:</h3>
+  <ul>
+    <li>Recipient <strong>must sign</strong>.</li>
+    <li>There must be <strong>claimable tokens</strong> available.</li>
+  </ul>
+
+  <h3>🔹 For <code>Cancel</code>:</h3>
+  <ul>
+    <li>Only the sender may cancel the stream.</li>
+  </ul>
+
+  <pre><code>Claim:  
+✔ Recipient signs  
+✔ Claimable amount > 0  
+
+Cancel:  
+✔ Sender signs</code></pre>
+
+  <hr>
+
+  <!-- WRAPPER -->
+  <h2 id="wrapper">5. 🧩 On-Chain Wrapper</h2>
+
+  <p>
+    <code>mkWrapped</code> converts <code>BuiltinData</code> into Haskell types so it can be compiled into an on-chain script.
+  </p>
+
+  <p>If anything fails to decode or validate, the validator throws a trace error.</p>
+
+  <hr>
+
+  <!-- JSON -->
+  <h2 id="json">6. 📝 Writing Cardano-CLI JSON Script</h2>
+
+  <p>
+    The function <code>writeValidatorJSON</code> serializes the validator to CBOR,
+    hex-encodes it, and outputs a <code>.plutus</code> JSON file compatible with <strong>cardano-cli</strong>.
+  </p>
+
+  <h3>Generated JSON Format</h3>
+  <pre><code>{
+  "type": "PlutusV2",
+  "description": "Streaming payment validator",
+  "cborHex": "4e4d010203..."
+}</code></pre>
+
+  <hr>
+
+  <!-- MAIN -->
+  <h2 id="mainfn">7. ⚙️ Main Function</h2>
+
+  <p>The <code>main</code> function:</p>
+
+  <ul>
+    <li>Creates <code>./compiled/</code> directory</li>
+    <li>Writes <code>stream-validator.plutus</code> JSON</li>
+    <li>Prints completion message</li>
+  </ul>
+
+  <hr>
+
+  <!-- EXAMPLE -->
+  <h2 id="example">8. 🧪 Practical Usage Example</h2>
+
+  <pre><code>-- Compile validator into cardano-cli format
+stack run
+
+-- Result written to:
+./compiled/stream-validator.plutus
+</code></pre>
+
+  <hr>
+
+  <!-- TESTING -->
+  <h2 id="testing">9. 🧷 Testing Strategy</h2>
+
+  <h3>⏳ Time-Based Tests</h3>
+  <ul>
+    <li>Test claims at start, midpoint, and near the end of the stream.</li>
+    <li>Test claiming after the stream ends.</li>
+  </ul>
+
+  <h3>🔐 Signature Tests</h3>
+  <ul>
+    <li>Recipient must sign <code>Claim</code>.</li>
+    <li>Sender must sign <code>Cancel</code>.</li>
+  </ul>
+
+  <h3>💰 Balance Tests</h3>
+  <ul>
+    <li>Recipient cannot claim more than accrued.</li>
+    <li>No negative claimable balance allowed.</li>
+  </ul>
+
+  <hr>
+
+  <!-- BEST PRACTICES -->
+  <h2 id="best">10. ✅ Best Practices</h2>
+
+  <ul>
+    <li>Always clamp timestamps before computing accrued amounts.</li>
+    <li>Add full trace messages for debugging in live networks.</li>
+    <li>Use indexed datums for compatibility with Plutus V2.</li>
+    <li>Keep redeemer branches small and efficient.</li>
+  </ul>
+
+  <hr>
+
+  <!-- GLOSSARY -->
+  <h2 id="glossary">11. 📘 Glossary of Terms</h2>
+
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>Streaming</strong></td><td>Continuous unlocking of funds over time.</td></tr>
+    <tr><td><strong>Datum</strong></td><td>On-chain configuration for the stream.</td></tr>
+    <tr><td><strong>Redeemer</strong></td><td>Action being taken (Claim/Cancel).</td></tr>
+    <tr><td><strong>POSIXTime</strong></td><td>Timestamp used by Plutus (milliseconds).</td></tr>
+    <tr><td><strong>ScriptContext</strong></td><td>Context of the spending transaction.</td></tr>
+    <tr><td><strong>CBOR</strong></td><td>Binary serialization format used on-chain.</td></tr>
+    <tr><td><strong>cardano-cli</strong></td><td>Tool for submitting and building transactions.</td></tr>
+    <tr><td><strong>Plutus V2</strong></td><td>Latest version of Cardano on-chain scripting language.</td></tr>
+  </table>
+
+</body>
+</html>

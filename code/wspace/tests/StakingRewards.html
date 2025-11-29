@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>StakingRewards.hs Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>💰 Detailed Tutorial: Understanding and Using <code>StakingRewards.hs</code></h1>
+
+  <p>This tutorial explains the complete structure and functionality of the <code>StakingRewards.hs</code> smart contract. 
+     This Plutus contract demonstrates how to lock funds as a stake and withdraw them later with an off-chain calculated reward.</p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#imports">📦 Imports Overview</a></li>
+    <li><a href="#data">🗂️ Data Structures</a></li>
+    <li><a href="#validator">🧠 Core Validator Logic</a></li>
+    <li><a href="#typed">🧱 Typed Validator Construction</a></li>
+    <li><a href="#endpoints">🔌 Off-Chain Endpoints</a></li>
+    <li><a href="#calculation">🧮 Reward Calculation</a></li>
+    <li><a href="#usage">🧪 Practical Usage Example</a></li>
+    <li><a href="#testing">🧷 Testing Strategy</a></li>
+    <li><a href="#security">⚠️ Security Notes</a></li>
+    <li><a href="#glossary">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="imports">1. 📦 Imports Overview</h2>
+
+  <h3>Smart Contract Essentials</h3>
+  <ul>
+    <li><code>PlutusTx</code>: Compiling Haskell into on-chain Plutus Core.</li>
+    <li><code>PlutusTx.Prelude</code>: Arithmetic and boolean functions for on-chain usage.</li>
+    <li><code>Ledger</code>: On-chain transaction structures.</li>
+    <li><code>Ledger.Value</code>: Handling multi-asset values.</li>
+    <li><code>Ledger.Constraints</code>: Off-chain transaction building.</li>
+  </ul>
+
+  <h3>Off-chain & Utility</h3>
+  <ul>
+    <li><code>Plutus.Contract</code>: For off-chain endpoints and interactions.</li>
+    <li><code>Data.Aeson</code>, <code>Generic</code>: For JSON and schema operations.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="data">2. 🗂️ Data Structures</h2>
+
+  <h3><code>StakeDatum</code></h3>
+  <p>This datum represents a user's stake on-chain.</p>
+
+  <ul>
+    <li><strong>sdStaker</strong>: The wallet (PKH) that owns the stake.</li>
+    <li><strong>sdAmount</strong>: Amount of lovelace staked.</li>
+    <li><strong>sdStart</strong>: The slot when the stake was created.</li>
+  </ul>
+
+  <h3><code>StakeRedeemer</code></h3>
+  <p>For this simple example, there is only one redeemer:</p>
+
+  <ul>
+    <li><strong>RedeemWithdraw</strong>: Indicates the staker is withdrawing.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="validator">3. 🧠 Core Validator Logic</h2>
+
+  <h3><code>mkValidator</code></h3>
+
+  <p>The validator ensures two critical conditions:</p>
+  <ul>
+    <li>✔️ The transaction is signed by the original staker.</li>
+    <li>✔️ The staker receives at least their staked amount (principal).</li>
+  </ul>
+
+  <h3>Validation Breakdown</h3>
+
+  <ul>
+    <li><strong>signedByStaker</strong> — Uses <code>txSignedBy</code> to verify authorization.</li>
+    <li><strong>principalReturned</strong> — Checks that the withdrawal transaction includes ≥ principal.</li>
+  </ul>
+
+  <p>The validator <strong>does not check reward amounts</strong> — this is entirely off-chain.</p>
+
+  <hr>
+
+  <h2 id="typed">4. 🧱 Typed Validator Construction</h2>
+
+  <p>The validator uses a typed script wrapper for safety:</p>
+
+  <ul>
+    <li><code>Staking</code> type role</li>
+    <li><code>typedValidator</code>: Compiles the validator</li>
+    <li><code>validator</code>: Exposable script</li>
+    <li><code>scrAddress</code>: Script address</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="endpoints">5. 🔌 Off-Chain Endpoints</h2>
+
+  <h3><code>stake</code></h3>
+  <ul>
+    <li>Creates a script UTXO containing the staker’s datum.</li>
+    <li>Locks the principal amount under the script.</li>
+    <li>Records the start slot for reward calculation.</li>
+  </ul>
+
+  <h3><code>unstake</code></h3>
+  <ul>
+    <li>Finds the user’s stake in the script.</li>
+    <li>Computes rewards off-chain.</li>
+    <li>Consumes the script UTXO.</li>
+    <li>Pays back principal + reward to the staker.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="calculation">6. 🧮 Reward Calculation Logic (Off-chain)</h2>
+
+  <pre><code>reward = principal * duration / 1000</code></pre>
+
+  <p>Where:</p>
+  <ul>
+    <li><strong>duration</strong> = current slot − stake start slot</li>
+    <li><strong>principal</strong> = amount originally staked</li>
+  </ul>
+
+  <p>⚠️ The validator does NOT verify the reward. It only ensures principal is returned.</p>
+
+  <hr>
+
+  <h2 id="usage">7. 🧪 Practical Usage Example</h2>
+
+  <pre><code>-- Stake 5 ADA
+awaitTxConfirmed = callEndpoint @"stake" 5000000
+
+-- Later, unstake
+callEndpoint @"unstake" ()
+</code></pre>
+
+  <p>Off-chain code calculates and supplies the reward amount during withdrawal.</p>
+
+  <hr>
+
+  <h2 id="testing">8. 🧷 Testing Strategy</h2>
+  <ul>
+    <li>Simulate different durations to verify reward calculations.</li>
+    <li>Test signatures — ensure only the staker can withdraw.</li>
+    <li>Try withdrawing with insufficient principal to confirm failure.</li>
+    <li>Use EmulatorTrace to test stake→wait→unstake flows.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="security">9. ⚠️ Security Notes</h2>
+
+  <ol>
+    <li>Reward calculation is off-chain → vulnerable to underpayment.</li>
+    <li>No on-chain enforcement of staking rate.</li>
+    <li>No admin controls or emergency mechanisms.</li>
+    <li>No multi-token staking support (only lovelace).</li>
+  </ol>
+
+  <p><strong>For production:</strong></p>
+  <ul>
+    <li>Add a state machine with on-chain reward configuration.</li>
+    <li>Enforce minimum reward amounts on-chain.</li>
+    <li>Include admin features (pause, emergency withdraw).</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="glossary">📘 Glossary of Terms</h2>
+
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>Stake</strong></td><td>Funds locked in the script for reward earning.</td></tr>
+    <tr><td><strong>Datum</strong></td><td>Data stored at a script UTXO.</td></tr>
+    <tr><td><strong>Redeemer</strong></td><td>Instruction passed when consuming a script UTXO.</td></tr>
+    <tr><td><strong>Slot</strong></td><td>Time unit in Cardano blockchain.</td></tr>
+    <tr><td><strong>Principal</strong></td><td>The original amount staked.</td></tr>
+    <tr><td><strong>Validator</strong></td><td>On-chain function enforcing spending rules.</td></tr>
+    <tr><td><strong>UTXO</strong></td><td>An unspent transaction output.</td></tr>
+    <tr><td><strong>Typed Validator</strong></td><td>Type-safe wrapper around validators.</td></tr>
+    <tr><td><strong>Reward</strong></td><td>Extra amount earned based on staking duration.</td></tr>
+  </table>
+
+</body>
+</html>

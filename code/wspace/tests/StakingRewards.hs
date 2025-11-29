@@ -16,7 +16,7 @@
 -- A simple Plutus staking rewards contract (tutorial-style)
 -- WARNING: This is an instructional example and not production audited code.
 
-module StakingRewards where
+module Main where
 
 import           Prelude                    (Show (..), String)
 import           Control.Monad              (void)

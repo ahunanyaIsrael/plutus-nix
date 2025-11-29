@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Electronics.hs Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧾 Detailed Tutorial: Understanding and Using <code>Electronics.hs</code></h1>
+
+  <p>This tutorial covers the <code>Electronics.hs</code> module, which implements a warranty Return Merchandise Authorization (RMA) smart contract on Cardano using Plutus. It explains the data structures, validator logic, compilation, and practical usage scenarios.</p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports-overview">📦 Imports Overview</a></li>
+    <li><a href="#2-data-structures">🗃️ Data Structures</a></li>
+    <li><a href="#3-validator-logic">🧠 Validator Logic</a></li>
+    <li><a href="#4-compile-validator">⚙️ Compile Validator</a></li>
+    <li><a href="#5-practical-usage-example">🧪 Practical Usage Example</a></li>
+    <li><a href="#6-best-practices">✅ Best Practices</a></li>
+    <li><a href="#7-glossary-of-terms">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="1-imports-overview">1. 📦 Imports Overview</h2>
+
+  <h3>Plutus Modules</h3>
+  <ul>
+    <li><strong>PlutusTx & PlutusTx.Prelude:</strong> On-chain compilation, serialization, and core Plutus scripting functions.</li>
+    <li><strong>Plutus.V2.Ledger.Api:</strong> Provides <code>Validator</code>, <code>ScriptContext</code>, <code>TxOut</code>, <code>Value</code>, and ADA constants.</li>
+    <li><strong>Plutus.V1.Ledger.Value:</strong> Utility for handling <code>Value</code> operations.</li>
+  </ul>
+
+  <h3>Haskell & Cardano API</h3>
+  <ul>
+    <li><strong>Prelude:</strong> Standard Haskell IO and utilities.</li>
+    <li><strong>Cardano.Api:</strong> Functions to write the compiled Plutus script to a file.</li>
+    <li><strong>Codec.Serialise:</strong> Serializes the compiled validator into a byte string.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="2-data-structures">2. 🗃️ Data Structures</h2>
+
+  <h3><code>RMAState</code></h3>
+  <p>Represents the state of an RMA process:</p>
+  <ul>
+    <li><strong>Pending</strong>: RMA request submitted.</li>
+    <li><strong>Testing</strong>: Device under evaluation.</li>
+    <li><strong>Approved</strong>: RMA approved for refund or replacement.</li>
+    <li><strong>Rejected</strong>: RMA denied.</li>
+  </ul>
+
+  <h3><code>RMADatum</code></h3>
+  <p>Datum associated with each RMA:</p>
+  <ul>
+    <li><strong>rCustomer</strong>: Customer's public key hash.</li>
+    <li><strong>rDeviceId</strong>: Device identifier.</li>
+    <li><strong>rDeposit</strong>: Amount deposited for warranty.</li>
+    <li><strong>rState</strong>: Current <code>RMAState</code>.</li>
+    <li><strong>rExpiry</strong>: Warranty expiry timestamp.</li>
+    <li><strong>rProof</strong>: Optional proof-of-test or evidence.</li>
+  </ul>
+
+  <h3><code>RMAAction</code></h3>
+  <p>Actions that can be applied to an RMA:</p>
+  <ul>
+    <li><strong>StartTest</strong>: Initiates testing.</li>
+    <li><strong>Approve</strong>: Approves the RMA.</li>
+    <li><strong>Reject</strong>: Rejects the RMA.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="3-validator-logic">3. 🧠 Validator Logic</h2>
+
+  <h3><code>validWarranty</code></h3>
+  <p>Checks that the current time is within the warranty period:</p>
+  <pre><code>{-# INLINABLE validWarranty #-}
+validWarranty :: RMADatum -> Integer -> Bool
+validWarranty datum currentTime = currentTime <= rExpiry datum
+</code></pre>
+
+  <h3><code>validTransition</code></h3>
+  <p>Ensures valid state transitions:</p>
+  <pre><code>{-# INLINABLE validTransition #-}
+validTransition :: RMAState -> RMAAction -> Bool
+validTransition Pending    StartTest = True
+validTransition Testing    Approve   = True
+validTransition Testing    Reject    = True
+validTransition _          _         = False
+</code></pre>
+
+  <h3><code>depositCorrect</code></h3>
+  <p>Ensures the RMA output holds sufficient ADA:</p>
+  <pre><code>{-# INLINABLE depositCorrect #-}
+depositCorrect :: RMADatum -> Value -> Bool
+depositCorrect datum val =
+    let adaHeld = V1.valueOf val adaSymbol adaToken
+    in adaHeld >= rDeposit datum
+</code></pre>
+
+  <h3><code>mkWarrantyRMAValidator</code></h3>
+  <p>Main validator that checks transitions, warranty validity, and deposit correctness:</p>
+  <pre><code>{-# INLINABLE mkWarrantyRMAValidator #-}
+mkWarrantyRMAValidator :: BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkWarrantyRMAValidator dat red ctx =
+    -- deserialize datum, action, and context
+    ...
+    if validTransition (rState datum) action
+       && validWarranty datum currentTime
+       && depositCorrect datum outputVal
+       then ()
+       else error ()
+</code></pre>
+
+  <hr>
+
+  <h2 id="4-compile-validator">4. ⚙️ Compile Validator</h2>
+
+  <ul>
+    <li><strong>validator:</strong> Compiles <code>mkWarrantyRMAValidator</code> to a Plutus <code>Validator</code>.</li>
+    <li><strong>plutusScript:</strong> Serializes the compiled validator for deployment (<code>.plutus</code> file).</li>
+  </ul>
+
+  <pre><code>validator :: Validator
+validator = mkValidatorScript $$(PlutusTx.compile [|| mkWarrantyRMAValidator ||])
+
+plutusScript :: PlutusScript PlutusScriptV2
+plutusScript = PlutusScriptSerialised . SBS.toShort . LBS.toStrict $ C.serialise validator
+</code></pre>
+
+  <hr>
+
+  <h2 id="5-practical-usage-example">5. 🧪 Practical Usage Example</h2>
+
+  <pre><code>main :: IO ()
+main = do
+    result <- writeFileTextEnvelope "warrantyRMA.plutus" Nothing plutusScript
+    case result of
+        Left err -> putStrLn $ "Error writing file: " ++ show err
+        Right () -> putStrLn "warrantyRMA.plutus created successfully."
+</code></pre>
+
+  <hr>
+
+  <h2 id="6-best-practices">6. ✅ Best Practices</h2>
+  <ul>
+    <li>Validate state transitions strictly to avoid inconsistent RMA states.</li>
+    <li>Ensure the warranty period is checked using POSIX timestamps.</li>
+    <li>Always verify that deposited ADA is correctly held in outputs.</li>
+    <li>Serialize and lift datum/action types properly for on-chain execution.</li>
+    <li>Test edge cases: expired warranty, invalid transitions, insufficient deposits.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="7-glossary-of-terms">7. 📘 Glossary of Terms</h2>
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>RMA</strong></td><td>Return Merchandise Authorization for warranty claims.</td></tr>
+    <tr><td><strong>RMADatum</strong></td><td>Datum storing RMA details: customer, device, deposit, state, expiry, proof.</td></tr>
+    <tr><td><strong>RMAAction</strong></td><td>Actions that can modify RMA state (StartTest, Approve, Reject).</td></tr>
+    <tr><td><strong>RMAState</strong></td><td>Current status of the RMA process.</td></tr>
+    <tr><td><strong>Validator</strong></td><td>Smart contract that enforces rules for RMA transactions.</td></tr>
+    <tr><td><strong>POSIXTime</strong></td><td>Timestamp used to validate warranty expiry.</td></tr>
+    <tr><td><strong>Value</strong></td><td>Represents ADA or token holdings in a transaction output.</td></tr>
+  </table>
+
+</body>
+</html>

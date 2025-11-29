@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TWAMM Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>⚖️ Detailed Tutorial: Understanding Your <code>TWAMM</code> Smart Contract</h1>
+
+  <p>
+    This tutorial walks through your Time-Weighted Automated Market Maker (TWAMM) smart contract. 
+    It explains the purpose of each data structure, the validator rules, how order execution works, and how the validator is compiled and used off-chain.
+  </p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports">📦 Imports Overview</a></li>
+    <li><a href="#2-data">🗃️ Data Structures</a></li>
+    <li><a href="#3-helpers">🧮 Helper Functions</a></li>
+    <li><a href="#4-validator">🧠 Core Validator Logic</a></li>
+    <li><a href="#5-boilerplate">⚙️ Boilerplate & Script Compilation</a></li>
+    <li><a href="#6-address">🏦 Validator Hash & Script Address</a></li>
+    <li><a href="#7-file">💾 Writing the Script to File</a></li>
+    <li><a href="#8-main">🚀 Main Program Workflow</a></li>
+    <li><a href="#9-glossary">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="1-imports">1. 📦 Imports Overview</h2>
+
+  <p>Your contract imports several Plutus V1 and V2 modules, JSON utilities, and Cardano API components.</p>
+
+  <h3>🔹 Plutus API Modules</h3>
+  <ul>
+    <li><strong>Plutus.V2.Ledger.Api</strong>: Core ledger types (<code>Validator</code>, <code>POSIXTime</code>, <code>ScriptContext</code>).</li>
+    <li><strong>Plutus.V2.Ledger.Contexts</strong>: Transaction context operations, signature verification.</li>
+    <li><strong>Plutus.V1.Ledger.Interval</strong>: Time interval utilities used for order execution windows.</li>
+    <li><strong>Plutus.V1.Ledger.Value</strong>: ADA and token value utilities.</li>
+  </ul>
+
+  <h3>🔹 Utility & Serialization Modules</h3>
+  <ul>
+    <li><strong>Codec.Serialise</strong>: Serializes the validator into a Plutus script file.</li>
+    <li><strong>Cardano.Api / Shelley</strong>: Generates script addresses and validator hashes.</li>
+    <li><strong>PlutusTx</strong>: Compiles Haskell code to on-chain Plutus Core.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="2-data">2. 🗃️ Data Structures</h2>
+
+  <h3><code>LongOrderDatum</code></h3>
+  <p>This represents a long-lived TWAMM order.</p>
+  <ul>
+    <li><strong>loOwner</strong> – Wallet that created the order.</li>
+    <li><strong>loDirection</strong> – <code>True = Buy</code>, <code>False = Sell</code>.</li>
+    <li><strong>loTotal</strong> – Total quantity to be traded.</li>
+    <li><strong>loStart</strong> – Execution start time.</li>
+    <li><strong>loEnd</strong> – Execution end time.</li>
+    <li><strong>loExecuted</strong> – How much has already been executed.</li>
+  </ul>
+
+  <h3><code>PoolDatum</code></h3>
+  <p>Represents AMM reserves:</p>
+  <ul>
+    <li><strong>poolX, poolY</strong> – Real reserves.</li>
+    <li><strong>poolVirtualX, poolVirtualY</strong> – Virtual reserves supporting TWAMM math.</li>
+  </ul>
+
+  <h3><code>TWAMMAction</code></h3>
+  <ul>
+    <li><strong>ExecuteSlice</strong> – Executes a time-based portion of the order.</li>
+    <li><strong>Cancel</strong> – Cancels the order (only owner can do this).</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="3-helpers">3. 🧮 Helper Functions</h2>
+
+  <h3><code>timeSlice</code></h3>
+  <p>
+    Calculates how much of the order should be executed at the current time, based on:
+  </p>
+  <ul>
+    <li>Total order size</li>
+    <li>Start and end time</li>
+    <li>Elapsed time</li>
+    <li>How much has already been executed</li>
+  </ul>
+
+  <h3><code>ediff</code></h3>
+  <p>Computes difference between two <code>POSIXTime</code> values.</p>
+
+  <h3><code>safeDivide</code></h3>
+  <p>Safe integer division using Plutus built-ins.</p>
+
+  <hr>
+
+  <h2 id="4-validator">4. 🧠 Core Validator Logic</h2>
+
+  <h3><code>mkValidator</code></h3>
+  <p>Enforces TWAMM order rules depending on the <strong>TWAMMAction</strong>:</p>
+
+  <h3>🔹 ExecuteSlice Action</h3>
+  <ul>
+    <li>❗ Execution cannot occur before <code>loStart</code></li>
+    <li>❗ Execution cannot occur after <code>loEnd</code></li>
+    <li>❗ Slice amount must not exceed remaining order</li>
+    <li>❗ AMM invariant must remain valid (placeholder)</li>
+  </ul>
+
+  <h3>🔹 Cancel Action</h3>
+  <ul>
+    <li>❗ Only the order owner can cancel</li>
+  </ul>
+
+  <pre><code>traceIfFalse "only owner can cancel" (txSignedBy info (loOwner lo))</code></pre>
+
+  <hr>
+
+  <h2 id="5-boilerplate">5. ⚙️ Boilerplate & Script Compilation</h2>
+
+  <h3><code>mkValidatorUntyped</code></h3>
+  <p>Wraps the validator so Plutus can use <code>BuiltinData</code> values on-chain.</p>
+
+  <h3><code>validator</code></h3>
+  <p>
+    Compiles the script using <code>PlutusTx.compile</code> into a Plutus validator.
+  </p>
+
+  <hr>
+
+  <h2 id="6-address">6. 🏦 Validator Hash & Script Address</h2>
+
+  <p>Generates both:</p>
+  <ul>
+    <li><strong>Plutus Validator Hash</strong></li>
+    <li><strong>Bech32 Script Address</strong> (for wallets & DApps)</li>
+  </ul>
+
+  <h3>Bech32 Generator</h3>
+  <pre><code>toBech32ScriptAddress network validator</code></pre>
+
+  <hr>
+
+  <h2 id="7-file">7. 💾 Writing the Script to File</h2>
+
+  <p>The validator is serialized and written to a file:</p>
+
+  <pre><code>writeValidator "twamm-validator.plutus" validator</code></pre>
+
+  <hr>
+
+  <h2 id="8-main">8. 🚀 Main Program Workflow</h2>
+
+  <p>Your <code>main</code> function performs:</p>
+
+  <ol>
+    <li>Compiles and writes the validator to <code>twamm-validator.plutus</code></li>
+    <li>Prints validator hash</li>
+    <li>Prints Plutus script address</li>
+    <li>Prints Bech32 script address</li>
+  </ol>
+
+  <pre><code>TWAMM validator generated successfully.</code></pre>
+
+  <hr>
+
+  <h2 id="9-glossary">9. 📘 Glossary of Terms</h2>
+
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>TWAMM</strong></td><td>Time-Weighted Automated Market Maker. Executes long-lived orders gradually.</td></tr>
+    <tr><td><strong>Datum</strong></td><td>State stored on-chain associated with a UTXO.</td></tr>
+    <tr><td><strong>ExecuteSlice</strong></td><td>Executes a time-based portion of a TWAMM order.</td></tr>
+    <tr><td><strong>Cancel</strong></td><td>Ends the order (only owner).</td></tr>
+    <tr><td><strong>POSIXTime</strong></td><td>Timestamp format used in Plutus smart contracts.</td></tr>
+    <tr><td><strong>ScriptContext</strong></td><td>Data describing the transaction interacting with the script.</td></tr>
+    <tr><td><strong>Validator</strong></td><td>Smart contract logic ensuring rule compliance.</td></tr>
+    <tr><td><strong>Bech32</strong></td><td>Human-readable Cardano address format.</td></tr>
+    <tr><td><strong>Virtual Reserves</strong></td><td>AMM technique enabling large trades through small slices.</td></tr>
+  </table>
+
+</body>
+</html>

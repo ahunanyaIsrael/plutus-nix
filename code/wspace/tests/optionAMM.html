@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>OptionsAMM Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>📘 OptionsAMM Smart Contract Tutorial</h1>
+
+<p>
+This tutorial explains the <code>OptionsAMM.hs</code> Plutus validator module.  
+It implements a simplified options Automated Market Maker (AMM) supporting:
+</p>
+
+<ul>
+  <li>Call and Put option series</li>
+  <li>Swaps</li>
+  <li>Add/Remove Liquidity</li>
+  <li>Option Exercise</li>
+</ul>
+
+<hr>
+
+<h2>📚 Table of Contents</h2>
+<ol>
+  <li><a href="#imports">📦 Imports Overview</a></li>
+  <li><a href="#data">🗃️ Data Structures</a></li>
+  <li><a href="#helpers">🔧 Helper Functions</a></li>
+  <li><a href="#validator">🧠 Core Validator Logic</a></li>
+  <li><a href="#boilerplate">⚙️ Script Compilation</a></li>
+  <li><a href="#addresses">🏦 Script Hash & Bech32 Conversion</a></li>
+  <li><a href="#write">💾 Writing the Validator File</a></li>
+  <li><a href="#main">🚀 Main Program Execution</a></li>
+  <li><a href="#usage">🧪 Practical Usage Workflow</a></li>
+  <li><a href="#tests">🧷 Testing Strategy</a></li>
+  <li><a href="#glossary">📘 Glossary</a></li>
+</ol>
+
+<hr>
+
+<h2 id="imports">1. 📦 Imports Overview</h2>
+
+<h3>Plutus Ledger & On-Chain API</h3>
+<ul>
+  <li><strong>Plutus.V2.Ledger.Api</strong>: POSIXTime, PubKeyHash, ScriptContext</li>
+  <li><strong>Plutus.V2.Ledger.Contexts</strong>: <code>findOwnInput</code>, <code>txSignedBy</code></li>
+  <li><strong>Plutus.V1.Ledger.Value</strong>: ADA utilities (<code>valueOf</code>)</li>
+  <li><strong>Plutus.V1.Ledger.Interval</strong>: <code>contains</code>, interval comparison</li>
+</ul>
+
+<h3>PlutusTx Compiler Utilities</h3>
+<ul>
+  <li><strong>PlutusTx</strong>: Allowing TH compilation into on-chain code</li>
+  <li><strong>PlutusTx.Prelude</strong>: Plutus-safe arithmetic</li>
+  <li><strong>BuiltinData</strong> utilities</li>
+</ul>
+
+<h3>Cardano API (off-chain)</h3>
+<ul>
+  <li>Serialize the validator</li>
+  <li>Export Bech32 script addresses</li>
+</ul>
+
+<hr>
+
+<h2 id="data">2. 🗃️ Data Structures</h2>
+
+<h3><code>OptionType</code></h3>
+Represents the two kinds of options:
+
+<ul>
+  <li><strong>Call</strong></li>
+  <li><strong>Put</strong></li>
+</ul>
+
+<h3><code>OptionSeriesDatum</code></h3>
+Defines the parameters of a specific option series:
+
+<table>
+  <tr><th>Field</th><th>Description</th></tr>
+  <tr><td>osUnderlier</td><td>The underlying token (CurrencySymbol)</td></tr>
+  <tr><td>osStrike</td><td>Strike price</td></tr>
+  <tr><td>osExpiry</td><td>Expiration time (POSIXTime)</td></tr>
+  <tr><td>osType</td><td>Call or Put</td></tr>
+  <tr><td>osCollateralReq</td><td>Collateral required to mint or exercise</td></tr>
+</table>
+
+<h3><code>PoolDatum</code></h3>
+Stores AMM pool reserves:
+
+<table>
+  <tr><th>Field</th><th>Description</th></tr>
+  <tr><td>pdResOption</td><td>Options token reserve</td></tr>
+  <tr><td>pdResCollateral</td><td>Collateral reserve (usually ADA)</td></tr>
+  <tr><td>pdFeeBps</td><td>Fee (basis points)</td></tr>
+  <tr><td>pdPricingParams</td><td>Raw pricing parameters (for future extension)</td></tr>
+</table>
+
+<h3><code>OptionsAction</code></h3>
+The redeemer used to select an AMM operation:
+
+<ul>
+  <li><strong>Swap</strong></li>
+  <li><strong>AddLiq</strong></li>
+  <li><strong>RemoveLiq</strong></li>
+  <li><strong>Exercise</strong></li>
+</ul>
+
+<hr>
+
+<h2 id="helpers">3. 🔧 Helper Functions</h2>
+
+<h3><code>scriptInputContainsToken</code></h3>
+Checks whether the script input UTXO contains a specific token.
+
+<h3><code>afterExpiry</code></h3>
+Ensures exercise only happens after the option’s expiry timestamp.
+
+<h3><code>valuePaidToPubKey</code></h3>
+Returns the value paid to a given PubKeyHash.
+
+<h3><code>findExerciser</code></h3>
+Determines which user signed the transaction.
+
+<h3><code>collateralSufficient</code></h3>
+Ensures minimum collateral is present when adding liquidity.
+
+<h3><code>canExercise</code></h3>
+Validates that:
+<ul>
+  <li>The exercise occurs after expiry</li>
+  <li>Sufficient collateral is provided to the exerciser</li>
+</ul>
+
+<hr>
+
+<h2 id="validator">4. 🧠 Core Validator Logic</h2>
+
+<pre><code>mkOptionsValidator :: OptionSeriesDatum -> OptionsAction -> ScriptContext -> Bool
+</code></pre>
+
+The validator enforces rules based on the action:
+
+<ul>
+  <li><strong>AddLiq</strong>: Must include required collateral</li>
+  <li><strong>RemoveLiq</strong>: Always allowed</li>
+  <li><strong>Swap</strong>: Always allowed</li>
+  <li><strong>Exercise</strong>: Must meet expiry + collateral rules</li>
+</ul>
+
+Powerful but simple: the contract delegates pricing logic to off-chain systems, while enforcing safety rules on-chain.
+
+<hr>
+
+<h2 id="boilerplate">5. ⚙️ Script Compilation (mkValidatorScript)</h2>
+
+<pre><code>validator :: Validator
+validator = mkValidatorScript $$(PlutusTx.compile [|| mkValidatorUntyped ||])
+</code></pre>
+
+This uses Template Haskell to produce the actual on-chain Plutus script.
+
+<hr>
+
+<h2 id="addresses">6. 🏦 Script Hash & Bech32 Conversion</h2>
+
+You provide:
+
+<ul>
+  <li><strong>plutusValidatorHash</strong>: Compute raw validator hash</li>
+  <li><strong>plutusScriptAddress</strong>: Raw Plutus address format</li>
+  <li><strong>toBech32ScriptAddress</strong>: Convert to mainnet/testnet address</li>
+</ul>
+
+These are essential when interacting from:
+
+- Lucid  
+- cardano-cli  
+- MeshJS  
+- Custom frontends  
+
+<hr>
+
+<h2 id="write">7. 💾 Writing the Validator File</h2>
+
+<pre><code>writeValidator "options_amm.plutus" validator
+</code></pre>
+
+Outputs a full script file that can be deployed onto Cardano.
+
+<hr>
+
+<h2 id="main">8. 🚀 Main Program Execution</h2>
+
+Running `main` accomplishes:
+
+<ol>
+  <li>Compile validator</li>
+  <li>Write <code>options_amm.plutus</code> to disk</li>
+  <li>Print:
+    <ul>
+      <li>Validator hash</li>
+      <li>On-chain address</li>
+      <li>Bech32 testnet address</li>
+    </ul>
+  </li>
+</ol>
+
+<hr>
+
+<h2 id="usage">9. 🧪 Practical Usage Workflow</h2>
+
+<pre><code>-- 1. Write the validator file
+writeValidator "options_amm.plutus" validator
+
+-- 2. Print Bech32 address
+putStrLn $ toBech32ScriptAddress Testnet validator
+
+-- 3. Construct OptionSeriesDatum JSON
+-- (needed for locking funds into the script)
+</code></pre>
+
+Typical dApp flow:
+
+<ol>
+  <li>Create an OptionSeriesDatum</li>
+  <li>Lock collateral + option tokens to the script</li>
+  <li>Users Swap / AddLiq / RemoveLiq</li>
+  <li>After expiry, users Exercise</li>
+</ol>
+
+<hr>
+
+<h2 id="tests">10. 🧷 Testing Strategy</h2>
+<ul>
+  <li>Verify collateral checks for AddLiq</li>
+  <li>Validate Swap / RemoveLiq work without restrictions</li>
+  <li>Test Exercise before/after expiry</li>
+  <li>Test incorrect redeemers</li>
+</ul>
+
+<hr>
+
+<h2 id="glossary">11. 📘 Glossary</h2>
+
+<table>
+  <tr><th>Term</th><th>Meaning</th></tr>
+  <tr><td><strong>Call Option</strong></td><td>Right to buy at strike</td></tr>
+  <tr><td><strong>Put Option</strong></td><td>Right to sell at strike</td></tr>
+  <tr><td><strong>AMM</strong></td><td>Automated Market Maker</td></tr>
+  <tr><td><strong>Datum</strong></td><td>State carried by a script UTXO</td></tr>
+  <tr><td><strong>Redeemer</strong></td><td>Action chosen for current transaction</td></tr>
+  <tr><td><strong>Collateral</strong></td><td>Funds required to mint/exercise</td></tr>
+  <tr><td><strong>Liquidity</strong></td><td>Tokens deposited into AMM reserves</td></tr>
+  <tr><td><strong>ScriptContext</strong></td><td>All info about the spending transaction</td></tr>
+  <tr><td><strong>Bech32</strong></td><td>Human-readable Cardano address format</td></tr>
+</table>
+
+</body>
+</html>

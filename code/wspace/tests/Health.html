@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Health.hs Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧾 Detailed Tutorial: Understanding and Using <code>Health.hs</code></h1>
+
+  <p>This tutorial covers the <code>Health.hs</code> module, which implements a healthcare consent and claim management smart contract on Cardano using Plutus. It explains data structures, validation logic, minting policies, and practical usage scenarios.</p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports-overview">📦 Imports Overview</a></li>
+    <li><a href="#2-data-structures">🗃️ Data Structures</a></li>
+    <li><a href="#3-validator-logic">🧠 Validator Logic</a></li>
+    <li><a href="#4-minting-policy">⚙️ Minting Policy</a></li>
+    <li><a href="#5-practical-usage-example">🧪 Practical Usage Example</a></li>
+    <li><a href="#6-best-practices">✅ Best Practices</a></li>
+    <li><a href="#7-glossary-of-terms">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="1-imports-overview">1. 📦 Imports Overview</h2>
+
+  <h3>Plutus Modules</h3>
+  <ul>
+    <li><strong>Plutus.V2.Ledger.Api:</strong> Provides core types such as <code>ScriptContext</code>, <code>PubKeyHash</code>, and <code>POSIXTime</code>.</li>
+    <li><strong>Plutus.V2.Ledger.Contexts:</strong> Utility functions to inspect transaction context (<code>txSignedBy</code>).</li>
+    <li><strong>Plutus.V1.Ledger.Interval:</strong> Time interval operations for validating consent expiry.</li>
+    <li><strong>PlutusTx & PlutusTx.Prelude:</strong> On-chain compilation, serialization, and basic Plutus scripting functions.</li>
+  </ul>
+
+  <h3>Haskell & Utilities</h3>
+  <ul>
+    <li>Prelude and GHC.Generics: Standard Haskell utilities and automatic type derivation.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="2-data-structures">2. 🗃️ Data Structures</h2>
+
+  <h3><code>Consent</code></h3>
+  <p>Represents a patient's consent for a provider to access their data:</p>
+  <ul>
+    <li><strong>patientPKH</strong>: Patient's PubKeyHash.</li>
+    <li><strong>providerPKH</strong>: Authorized provider's PubKeyHash.</li>
+    <li><strong>scopes</strong>: List of allowed operations or data areas.</li>
+    <li><strong>expiry</strong>: POSIXTime after which consent is invalid.</li>
+  </ul>
+
+  <h3><code>AccessLog</code></h3>
+  <p>Records when a provider accesses patient data:</p>
+  <ul>
+    <li><strong>logHash</strong>: Hash of access event or transaction.</li>
+    <li><strong>logTs</strong>: Timestamp of the access.</li>
+  </ul>
+
+  <h3><code>ClaimState</code></h3>
+  <p>Represents the state of an insurance claim:</p>
+  <ul>
+    <li><strong>File</strong>: Claim filed.</li>
+    <li><strong>Approve</strong>: Claim approved.</li>
+    <li><strong>Reject</strong>: Claim rejected.</li>
+  </ul>
+
+  <h3><code>Claim</code></h3>
+  <p>Represents an insurance payout request:</p>
+  <ul>
+    <li><strong>policyId</strong>: Policy identifier.</li>
+    <li><strong>claimant</strong>: PubKeyHash of the claimant.</li>
+    <li><strong>amount</strong>: Requested payout.</li>
+    <li><strong>evidenceHash</strong>: Evidence supporting the claim.</li>
+    <li><strong>state</strong>: Current <code>ClaimState</code>.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="3-validator-logic">3. 🧠 Validator Logic</h2>
+
+  <h3><code>validateConsent</code></h3>
+  <p>Ensures that only the patient can mint or revoke consent and that the consent has not expired:</p>
+  <pre><code>{-# INLINABLE validateConsent #-}
+validateConsent :: Consent -> ScriptContext -> Bool
+validateConsent c ctx =
+    txSignedBy (scriptContextTxInfo ctx) (patientPKH c) &&
+    contains (from $ expiry c) (txInfoValidRange $ scriptContextTxInfo ctx)
+</code></pre>
+
+  <h3><code>validateAccessLog</code></h3>
+  <p>Ensures that only the authorized provider can append an access log:</p>
+  <pre><code>{-# INLINABLE validateAccessLog #-}
+validateAccessLog :: AccessLog -> Consent -> ScriptContext -> Bool
+validateAccessLog log consent ctx =
+    txSignedBy (scriptContextTxInfo ctx) (providerPKH consent)
+</code></pre>
+
+  <h3><code>validateClaim</code></h3>
+  <p>Validates claim state transitions:</p>
+  <pre><code>{-# INLINABLE validateClaim #-}
+validateClaim :: Claim -> ScriptContext -> Bool
+validateClaim claim ctx =
+    case state claim of
+        File    -> True
+        Approve -> txSignedBy (scriptContextTxInfo ctx) (claimant claim)
+        Reject  -> True
+</code></pre>
+
+  <hr>
+
+  <h2 id="4-minting-policy">4. ⚙️ Minting Policy</h2>
+
+  <p>Example minting policy for consent tokens:</p>
+  <pre><code>{-# INLINABLE consentPolicy #-}
+consentPolicy :: PubKeyHash -> () -> ScriptContext -> Bool
+consentPolicy patient _ ctx = txSignedBy (scriptContextTxInfo ctx) patient
+</code></pre>
+
+  <hr>
+
+  <h2 id="5-practical-usage-example">5. 🧪 Practical Usage Example</h2>
+
+  <pre><code>main :: P.IO ()
+main = P.putStrLn "Health Consent / Claim contract compiled successfully!"
+</code></pre>
+
+  <hr>
+
+  <h2 id="6-best-practices">6. ✅ Best Practices</h2>
+  <ul>
+    <li>Always validate the signer to ensure only authorized parties perform actions.</li>
+    <li>Check consent expiry using POSIXTime to prevent outdated access.</li>
+    <li>Trace meaningful messages in on-chain validation for easier debugging.</li>
+    <li>Ensure claims are handled according to state logic (file, approve, reject).</li>
+    <li>Use lift and IsData instances for serialization of on-chain data structures.</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="7-glossary-of-terms">7. 📘 Glossary of Terms</h2>
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><strong>Consent</strong></td><td>Authorization from a patient allowing a provider to access health data.</td></tr>
+    <tr><td><strong>AccessLog</strong></td><td>Record of data access by a provider.</td></tr>
+    <tr><td><strong>Claim</strong></td><td>Insurance payout request submitted by a claimant.</td></tr>
+    <tr><td><strong>ClaimState</strong></td><td>State of a claim: filed, approved, or rejected.</td></tr>
+    <tr><td><strong>POSIXTime</strong></td><td>Time representation used for consent expiry and logs.</td></tr>
+    <tr><td><strong>PubKeyHash</strong></td><td>Public key hash identifying participants (patient, provider, claimant).</td></tr>
+    <tr><td><strong>txSignedBy</strong></td><td>Checks if a transaction was signed by a specific public key.</td></tr>
+    <tr><td><strong>ScriptContext</strong></td><td>Contextual information about the executing transaction.</td></tr>
+  </table>
+
+</body>
+</html>

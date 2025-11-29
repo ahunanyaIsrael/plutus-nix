@@ -85,6 +85,221 @@ executable vesting-exe
     default-language:   Haskell2010
     other-modules:      Types
 
+executable campaign-exe
+    main-is:            Campaign.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time
+    default-language:   Haskell2010
+    other-modules:      Types
+
+executable TWAMM-exe
+    main-is:            TWAMM.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time
+    default-language:   Haskell2010
+    other-modules:      Types
+
+executable streamvault-exe
+    main-is:            StreamVault.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time,
+        base16,
+        base16-bytestring,
+        directory,
+    default-language:   Haskell2010
+    other-modules:      Types
+
+executable StakingRewards-exe
+    main-is:            StakingRewards.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time,
+        base16,
+        base16-bytestring,
+        directory,
+        aeson-pretty
+    default-language:   Haskell2010
+    other-modules:      Types
+
+executable StableSwap-exe
+    main-is:            StableSwap.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time,
+        base16,
+        base16-bytestring,
+        directory,
+        aeson-pretty
+    default-language:   Haskell2010
+    other-modules:      Types
+
+executable Savings-exe
+    main-is:            Savings.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time,
+        base16,
+        base16-bytestring,
+        directory,
+        aeson-pretty
+    default-language:   Haskell2010
+    other-modules:      Types
+    
+executable Savings2-exe
+    main-is:            Savings2.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time,
+        base16,
+        base16-bytestring,
+        directory,
+        aeson-pretty
+    default-language:   Haskell2010
+    other-modules:      Types
+
+executable Allowance-exe
+    main-is:            Allowance.hs
+    hs-source-dirs:     tests
+    build-depends:
+        base >=4.14 && <5,
+        wspace,
+        plutus-tx,
+        plutus-tx-plugin,
+        plutus-ledger-api,
+        cardano-api,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        serialise,
+        bytestring,
+        text,
+        aeson,
+        containers,
+        data-default,
+        bech32,
+        utilities,
+        time,
+        base16,
+        base16-bytestring,
+        directory,
+        aeson-pretty
+    default-language:   Haskell2010
+    other-modules:      Types
+
 test-suite wspace-tests
     import:              common-all-tests
     type:                exitcode-stdio-1.0

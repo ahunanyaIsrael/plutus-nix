@@ -104,7 +104,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fplugin PlutusTx.Plugin #-}
 
-module Savings where
+module Main where
 
 import PlutusTx (compile, unstableMakeIsData, CompiledCode, unsafeFromBuiltinData)
 

@@ -7,7 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts    #-}
 
-module StableSwap where
+module Main where
 
 import Prelude (IO, String, FilePath, putStrLn, (<>))
 import qualified Prelude as P

@@ -5,7 +5,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module TWAMM where
+module Main where
 
 import Prelude (IO, String, FilePath, putStrLn, (<>))
 import qualified Prelude as P

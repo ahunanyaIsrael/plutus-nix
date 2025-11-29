@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 
-module StreamVault where
+module Main where
 
 import           Prelude                        (Show, IO(), putStrLn, String)
 import qualified Prelude

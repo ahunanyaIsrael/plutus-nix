@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Campaign.hs Smart Contract Tutorial</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #fdfdfd;
+      padding: 2px;
+      line-height: 1.7;
+      color: #222;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #002b45;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🧾 Detailed Tutorial: Understanding and Using <code>Campaign.hs</code></h1>
+
+  <p>This tutorial explains the <code>Campaign.hs</code> smart contract, which implements a simple crowdfunding campaign on Cardano using Plutus. It demonstrates donation, withdrawal, and refund logic.</p>
+
+  <hr>
+
+  <h2>📚 Table of Contents</h2>
+  <ol>
+    <li><a href="#1-imports">📦 Imports Overview</a></li>
+    <li><a href="#2-datatypes">🗃️ On-chain Data Types</a></li>
+    <li><a href="#3-donation-logic">💸 Donation Parameters & Logic</a></li>
+    <li><a href="#4-validator-logic">🧠 Validator Logic</a></li>
+    <li><a href="#5-validator-wrapper">⚙️ Validator Wrapper & Compilation</a></li>
+    <li><a href="#6-write-validator">📝 Writing Validator to File</a></li>
+    <li><a href="#7-practical-usage">🧪 Practical Usage Example</a></li>
+    <li><a href="#8-best-practices">✅ Best Practices</a></li>
+    <li><a href="#9-glossary">📘 Glossary of Terms</a></li>
+  </ol>
+
+  <hr>
+
+  <h2 id="1-imports">1. 📦 Imports Overview</h2>
+
+  <ul>
+    <li><strong>PlutusTx:</strong> Compile Haskell functions to Plutus Core and convert custom data types to on-chain format.</li>
+    <li><strong>PlutusTx.Prelude:</strong> Provides on-chain Haskell primitives.</li>
+    <li><strong>Plutus.V2.Ledger.Contexts:</strong> Functions for transaction validation and inspecting the context (<code>txSignedBy</code>, <code>scriptContextTxInfo</code>).</li>
+    <li><strong>Plutus.V2.Ledger.Api:</strong> Core blockchain types such as <code>Validator</code>, <code>PubKeyHash</code>, <code>Datum</code>, <code>Address</code>, and <code>ValidatorHash</code>.</li>
+    <li><strong>Plutus.V1.Ledger.Interval & Value:</strong> Functions to check time intervals and extract ADA amounts.</li>
+    <li><strong>Cardano.Api:</strong> Utilities to serialize and write the validator script to a file.</li>
+  </ul>
+
+  <h2 id="2-datatypes">2. 🗃️ On-chain Data Types</h2>
+
+  <h3><code>CampaignDatum</code></h3>
+  <ul>
+    <li><strong>beneficiary:</strong> Public key that can withdraw funds.</li>
+    <li><strong>deadline:</strong> POSIX timestamp for campaign expiration.</li>
+    <li><strong>goal:</strong> Target amount for the campaign.</li>
+    <li><strong>totalDonated:</strong> Total contributions so far.</li>
+  </ul>
+
+  <h3><code>CampaignActions</code></h3>
+  <ul>
+    <li><strong>Donate:</strong> Contribute ADA to the campaign.</li>
+    <li><strong>Withdraw:</strong> Beneficiary withdraws funds after goal is met and deadline reached.</li>
+    <li><strong>Refund:</strong> Donors get a refund if goal not met after deadline.</li>
+  </ul>
+
+  <h2 id="3-donation-logic">3. 💸 Donation Parameters & Logic</h2>
+
+  <ul>
+    <li><strong>minDonation:</strong> 1 ADA (1,000,000 lovelace) minimum per transaction.</li>
+    <li><strong>getLovelace:</strong> Extracts ADA amount from a <code>Value</code>.</li>
+    <li><strong>donationAmount:</strong> Computes total ADA sent to this script in a transaction.</li>
+  </ul>
+
+  <h2 id="4-validator-logic">4. 🧠 Validator Logic</h2>
+
+  <p>The core validator <code>mkCampaignValidator</code> enforces rules:</p>
+  <ul>
+    <li><strong>Donate:</strong> Must be before the deadline and at least <code>minDonation</code>; output datum must be updated with new total donations.</li>
+    <li><strong>Withdraw:</strong> Only beneficiary can withdraw after deadline if goal reached.</li>
+    <li><strong>Refund:</strong> Donors can get a refund after deadline if goal not met.</li>
+  </ul>
+
+  <h2 id="5-validator-wrapper">5. ⚙️ Validator Wrapper & Compilation</h2>
+
+  <p><strong>wrap:</strong> Converts <code>BuiltinData</code> to Haskell types, calls <code>mkCampaignValidator</code>, and throws an error if validation fails.</p>
+  <p><strong>compiledCode:</strong> Plutus Core version of validator.</p>
+  <p><strong>validator:</strong> Final <code>Validator</code> script ready for deployment.</p>
+
+  <h2 id="6-write-validator">6. 📝 Writing Validator to File</h2>
+
+  <pre><code>writeValidator "./assets/campaign-validator.plutus" validator</code></pre>
+  <p>Serializes the validator and writes it as a <code>.plutus</code> file for deployment.</p>
+
+  <h2 id="7-practical-usage">7. 🧪 Practical Usage Example</h2>
+
+  <pre><code>main :: IO ()
+main = do
+    putStrLn "Validator compiled successfully!"
+    writeValidator "./assets/campaign-validator.plutus" validator
+</code></pre>
+
+  <h2 id="8-best-practices">8. ✅ Best Practices</h2>
+
+  <ul>
+    <li>Always enforce minimum donation amounts to prevent dust spam.</li>
+    <li>Ensure datum is updated correctly after each donation for accurate accounting.</li>
+    <li>Test edge cases: donations before/after deadline, withdrawals at goal, refunds.</li>
+    <li>Include meaningful <code>traceIfFalse</code> messages for easier debugging.</li>
+  </ul>
+
+  <h2 id="9-glossary">9. 📘 Glossary of Terms</h2>
+
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td>CampaignDatum</td><td>Datum structure containing beneficiary, goal, deadline, and total donations.</td></tr>
+    <tr><td>CampaignActions</td><td>Enum of actions: Donate, Withdraw, Refund.</td></tr>
+    <tr><td>Validator</td><td>Smart contract enforcing donation, withdrawal, and refund rules.</td></tr>
+    <tr><td>TxInfo</td><td>Information about a transaction, used in validation.</td></tr>
+    <tr><td>POSIXTime</td><td>Time type for deadlines.</td></tr>
+    <tr><td>PubKeyHash</td><td>Identifier of the public key for signing.</td></tr>
+    <tr><td>minDonation</td><td>Minimum donation amount enforced in lovelace.</td></tr>
+    <tr><td>PlutusScriptV2</td><td>Serialized script format for deployment on Cardano.</td></tr>
+  </table>
+
+</body>
+</html>
