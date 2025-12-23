@@ -1,0 +1,129 @@
+When
+    [Case
+        (Deposit
+            (Role "Alice")
+            (Role "Alice")
+            (Token "" "")
+            (Constant 100000000)
+        )
+        (When
+            [Case
+                (Choice
+                    (ChoiceId
+                        "Approval"
+                        (Role "official1")
+                    )
+                    [Bound 1 1]
+                )
+                (When
+                    [Case
+                        (Choice
+                            (ChoiceId
+                                "Approval"
+                                (Role "official2")
+                            )
+                            [Bound 1 1]
+                        )
+                        (When
+                            [Case
+                                (Choice
+                                    (ChoiceId
+                                        "Approval"
+                                        (Role "official3")
+                                    )
+                                    [Bound 1 1]
+                                )
+                                (When
+                                    [Case
+                                        (Choice
+                                            (ChoiceId
+                                                "Approval"
+                                                (Role "official4")
+                                            )
+                                            [Bound 1 1]
+                                        )
+                                        (If
+                                            (ValueGE
+                                                (AddValue
+                                                    (AddValue
+                                                        (AddValue
+                                                            (AddValue
+                                                                (Constant 0)
+                                                                (ChoiceValue
+                                                                    (ChoiceId
+                                                                        "Approval"
+                                                                        (Role "official1")
+                                                                    ))
+                                                            )
+                                                            (ChoiceValue
+                                                                (ChoiceId
+                                                                    "Approval"
+                                                                    (Role "official2")
+                                                                ))
+                                                        )
+                                                        (ChoiceValue
+                                                            (ChoiceId
+                                                                "Approval"
+                                                                (Role "official3")
+                                                            ))
+                                                    )
+                                                    (ChoiceValue
+                                                        (ChoiceId
+                                                            "Approval"
+                                                            (Role "official4")
+                                                        ))
+                                                )
+                                                (Constant 3)
+                                            )
+                                            (Pay
+                                                (Role "Alice")
+                                                (Party (Role "Beneficiary"))
+                                                (Token "" "")
+                                                (Constant 100000000)
+                                                Close 
+                                            )
+                                            (Pay
+                                                (Role "Alice")
+                                                (Party (Role "Alice"))
+                                                (Token "" "")
+                                                (Constant 100000000)
+                                                Close 
+                                            )
+                                        )]
+                                    1765738740000
+                                    (Pay
+                                        (Role "Alice")
+                                        (Party (Role "Alice"))
+                                        (Token "" "")
+                                        (Constant 100000000)
+                                        Close 
+                                    )
+                                )]
+                            1765738740000
+                            (Pay
+                                (Role "Alice")
+                                (Party (Role "Alice"))
+                                (Token "" "")
+                                (Constant 100000000)
+                                Close 
+                            )
+                        )]
+                    1765738740000
+                    (Pay
+                        (Role "Alice")
+                        (Party (Role "Alice"))
+                        (Token "" "")
+                        (Constant 100000000)
+                        Close 
+                    )
+                )]
+            1765738740000
+            (Pay
+                (Role "Alice")
+                (Party (Role "Alice"))
+                (Token "" "")
+                (Constant 100000000)
+                Close 
+            )
+        )]
+    1765738740000 Close 

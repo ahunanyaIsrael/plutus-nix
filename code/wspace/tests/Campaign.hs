@@ -1,684 +1,266 @@
--- {-# LANGUAGE NoImplicitPrelude #-}
--- {-# LANGUAGE DataKinds #-}
--- {-# LANGUAGE TemplateHaskell #-}
--- {-# LANGUAGE ScopedTypeVariables #-}
--- {-# LANGUAGE DeriveAnyClass #-}
--- {-# LANGUAGE DeriveGeneric #-}
--- {-# LANGUAGE OverloadedStrings #-}
--- {-# OPTIONS_GHC -fplugin PlutusTx.Plugin #-}
-
--- module Main where
-
--- -- Plutus imports
--- import PlutusTx (compile, unsafeFromBuiltinData, CompiledCode, unstableMakeIsData)
--- import PlutusTx.Prelude hiding (($), (<>)) -- hide conflicting operators
--- import Plutus.V2.Ledger.Contexts (txSignedBy, ScriptContext (..), TxInfo (..))
--- import Plutus.V2.Ledger.Api (BuiltinData, Validator, mkValidatorScript, POSIXTime, PubKeyHash)
--- import Plutus.V1.Ledger.Interval (contains, to, from)
-
--- -- Standard Haskell imports
--- import Prelude (IO, Show, print, putStrLn, FilePath, ($), (<>))
--- import GHC.Generics (Generic)
-
--- -- File and serialization imports
--- import qualified Data.ByteString.Lazy as LBS
--- import qualified Data.ByteString.Short as SBS
--- import Codec.Serialise (serialise)
--- import Cardano.Api
---     ( writeFileTextEnvelope
---     , displayError
---     , PlutusScript (..)
---     , PlutusScriptV2
---     )
--- import Cardano.Api.Shelley (PlutusScript (..))
-
--- -- ===========================
--- -- | Custom On-chain Types   |
--- -- ===========================
-
--- data CampaignDatum = CampaignDatum
---     { beneficiary  :: PubKeyHash
---     , deadline     :: POSIXTime
---     , goal         :: Integer
---     , totalDonated :: Integer
---     } deriving (Show, Generic)
-
--- data CampaignActions = Donate | Withdraw | Refund
---     deriving (Show, Generic)
-
--- PlutusTx.unstableMakeIsData ''CampaignDatum -- converts data to bytes format (0 and 1s) that can be stored and transmitted -this because cardano doesnt understand haskell data structure it only understands binary data 
--- PlutusTx.unstableMakeIsData ''CampaignActions
-
--- -- ===========================
--- -- | Validator Logic         |
--- -- ===========================
-
--- {-# INLINABLE mkCampaignValidator #-}
--- mkCampaignValidator :: CampaignDatum -> CampaignActions -> ScriptContext -> Bool
--- mkCampaignValidator dat red ctx =
---     case red of
---         Donate   -> traceIfFalse "Too late to donate" canDonate -- if canDonate is not true msg else run canDonate
---         Withdraw -> traceIfFalse "Not allowed to withdraw" canWithdraw
---         Refund   -> traceIfFalse "Cannot Refund" canRefund
---   where
---     info :: TxInfo -- TxInfo is a detailed record that contains all relevant information about the transaction
---     info = scriptContextTxInfo ctx --Retrieves scriptContextTxInfo from scriptt context (ctx) which returns TxInfo 
-
---     canDonate :: Bool -- is the transaction time with the deadline
---     canDonate = to (deadline dat) `contains` txInfoValidRange info
-
---     canWithdraw :: Bool
---     canWithdraw =
---         txSignedBy info (beneficiary dat) && --Check if the transaction was signed by the beneficiary specified in the datum.
---         from (deadline dat) `contains` txInfoValidRange info
-
---     canRefund :: Bool
---     canRefund = from (deadline dat) `contains` txInfoValidRange info &&
---         totalDonated dat < goal dat
--- -- ===========================
--- -- | Wrapper & Compilation   |
--- -- ===========================
-
--- {-# INLINABLE wrap #-}
--- wrap :: BuiltinData -> BuiltinData -> BuiltinData -> ()
--- wrap d r c =
---     let dat = unsafeFromBuiltinData d
---         red = unsafeFromBuiltinData r
---         ctx = unsafeFromBuiltinData c
---     in if mkCampaignValidator dat red ctx then () else error ()
-
--- compiledCode :: PlutusTx.CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> ())
--- compiledCode = $$(PlutusTx.compile [|| wrap ||])
-
--- validator :: Validator
--- validator = mkValidatorScript compiledCode
-
--- -- ===========================
--- -- | Write Validator to File |
--- -- ===========================
-
--- writeValidator :: FilePath -> Validator -> IO ()
--- writeValidator file validator = do
---     let scriptSerialised = serialise validator
---         scriptShort = SBS.toShort . LBS.toStrict $ scriptSerialised
---         script = PlutusScriptSerialised scriptShort :: PlutusScript PlutusScriptV2
---     result <- writeFileTextEnvelope file Nothing script
---     case result of
---         Left err -> print (displayError err)
---         Right () -> putStrLn ("Wrote validator to: " <> file)
-
--- -- ===========================
--- -- | Main                    |
--- -- ===========================
-
--- main :: IO ()
--- main = do
---     putStrLn "Validator compiled successfully!"
---     writeValidator "campaign-validator.plutus" validator
-
--- -- {-# INLINABLE traceIfFalse #-}
--- -- traceIfFalse :: BuiltinString -> Bool -> Bool
--- -- traceIfFalse msg condition =
--- --     if condition
--- --         then True
--- --         else trace msg False
-
--- -- data ScriptContext = ScriptContext
--- --     { scriptContextTxInfo :: TxInfo
--- --     , scriptContextPurpose :: ScriptPurpose
--- --     }
-
--- -- data TxInfo = TxInfo
--- --     { txInfoInputs      :: [TxInInfo]
--- --     , txInfoOutputs     :: [TxOut]
--- --     , txInfoFee         :: Value
--- --     , txInfoMint        :: Value
--- --     , txInfoDCert       :: [DCert]
--- --     , txInfoWdrl        :: Map StakingCredential Integer
--- --     , txInfoValidRange  :: POSIXTimeRange
--- --     , txInfoSignatories :: [PubKeyHash]
--- --     , txInfoData        :: [(DatumHash, Datum)]
--- --     , txInfoId          :: TxId
--- --     }
-
--- -- to =>  Creates an interval from -∞ to an upper bound
--- -- contain => Checks if one interval is within another
--- -- contains :: Interval a -> Interval a -> Bool
-
--- {--
--- txSignedBy :: TxInfo -> PubKeyHash -> Bool
--- checks if a transaction is signed by a given key
-
-
--- --}
-
-
--- {-# LANGUAGE NoImplicitPrelude #-}
--- {-# LANGUAGE DataKinds #-}
--- {-# LANGUAGE TemplateHaskell #-}
--- {-# LANGUAGE ScopedTypeVariables #-}
--- {-# LANGUAGE DeriveAnyClass #-}
--- {-# LANGUAGE DeriveGeneric #-}
--- {-# LANGUAGE OverloadedStrings #-}
--- {-# OPTIONS_GHC -fplugin PlutusTx.Plugin #-}
-
--- module Main where
-
--- -- Plutus imports
--- import PlutusTx (compile, unsafeFromBuiltinData, CompiledCode, unstableMakeIsData)
--- import PlutusTx.Prelude hiding (($), (<>))  -- hide conflicting operators
--- import Plutus.V2.Ledger.Contexts (txSignedBy, ScriptContext(..), TxInfo(..))
--- import Plutus.V2.Ledger.Api (BuiltinData, Validator, mkValidatorScript, POSIXTime, PubKeyHash)
--- import Plutus.V1.Ledger.Interval (contains, to, from)
-
--- -- Standard Haskell imports
--- import Prelude (IO, Show, print, putStrLn, FilePath, ($), (<>))
--- import GHC.Generics (Generic)
-
--- -- File and serialization imports
--- import qualified Data.ByteString.Lazy as LBS
--- import qualified Data.ByteString.Short as SBS
--- import Codec.Serialise (serialise)
--- import Cardano.Api
---     ( writeFileTextEnvelope
---     , displayError
---     , PlutusScript (..)
---     , PlutusScriptV2
---     )
--- import Cardano.Api.Shelley (PlutusScript (..))
-
--- -- ===========================
--- -- | Minimum donation (lovelace)
--- -- ===========================
--- {-# INLINABLE minDonation #-}
--- minDonation :: Integer
--- minDonation = 1000000  -- 1 ADA
-
--- -- Placeholder for computing donation amounts sent to this script
--- {-# INLINABLE donationAmount #-}
--- donationAmount :: ScriptContext -> Integer
--- donationAmount _ctx = minDonation
--- -- TODO: replace with actual sum of inputs/outputs going to this validator
-
--- -- ===========================
--- -- | Custom On-chain Types
--- -- ===========================
-
--- data CampaignDatum = CampaignDatum
---     { beneficiary  :: PubKeyHash
---     , deadline     :: POSIXTime
---     , goal         :: Integer
---     , totalDonated :: Integer
---     } deriving (Show, Generic)
-
--- data CampaignActions = Donate | Withdraw | Refund
---     deriving (Show, Generic)
-
--- PlutusTx.unstableMakeIsData ''CampaignDatum
--- PlutusTx.unstableMakeIsData ''CampaignActions
-
--- -- ===========================
--- -- | Validator Logic
--- -- ===========================
-
--- {-# INLINABLE mkCampaignValidator #-}
--- mkCampaignValidator :: CampaignDatum -> CampaignActions -> ScriptContext -> Bool
--- mkCampaignValidator dat red ctx =
---     case red of
---         Donate   -> traceIfFalse "Too late to donate" canDonate
---         Withdraw -> traceIfFalse "Not allowed to withdraw" canWithdraw
---         Refund   -> traceIfFalse "Cannot refund" canRefund
---   where
---     info :: TxInfo
---     info = scriptContextTxInfo ctx
-
---     -- Can donate if within deadline and amount >= minDonation
---     canDonate :: Bool
---     canDonate = to (deadline dat) `contains` txInfoValidRange info &&
---                 donationAmount ctx >= minDonation
-
---     -- Can withdraw only if signed by beneficiary after deadline
---     canWithdraw :: Bool
---     canWithdraw =
---         txSignedBy info (beneficiary dat) &&
---         from (deadline dat) `contains` txInfoValidRange info
-
---     -- Can refund if deadline passed but goal not reached
---     canRefund :: Bool
---     canRefund = from (deadline dat) `contains` txInfoValidRange info &&
---                 totalDonated dat < goal dat
-
--- -- ===========================
--- -- | Wrapper & Compilation
--- -- ===========================
-
--- {-# INLINABLE wrap #-}
--- wrap :: BuiltinData -> BuiltinData -> BuiltinData -> ()
--- wrap d r c =
---     let dat = unsafeFromBuiltinData d
---         red = unsafeFromBuiltinData r
---         ctx = unsafeFromBuiltinData c
---     in if mkCampaignValidator dat red ctx then () else error ()
-
--- compiledCode :: PlutusTx.CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> ())
--- compiledCode = $$(PlutusTx.compile [|| wrap ||])
-
--- validator :: Validator
--- validator = mkValidatorScript compiledCode
-
--- -- ===========================
--- -- | Write Validator to File
--- -- ===========================
-
--- writeValidator :: FilePath -> Validator -> IO ()
--- writeValidator file validator = do
---     let scriptSerialised = serialise validator
---         scriptShort = SBS.toShort . LBS.toStrict $ scriptSerialised
---         script = PlutusScriptSerialised scriptShort :: PlutusScript PlutusScriptV2
---     result <- writeFileTextEnvelope file Nothing script
---     case result of
---         Left err -> print (displayError err)
---         Right () -> putStrLn ("Wrote validator to: " <> file)
-
--- -- ===========================
--- -- | Main
--- -- ===========================
-
--- main :: IO ()
--- main = do
---     putStrLn "Validator compiled successfully!"
---     writeValidator "campaign-validator.plutus" validator
-
--- {-# LANGUAGE NoImplicitPrelude #-}
--- {-# LANGUAGE DataKinds #-}
--- {-# LANGUAGE TemplateHaskell #-}
--- {-# LANGUAGE ScopedTypeVariables #-}
--- {-# LANGUAGE DeriveAnyClass #-}
--- {-# LANGUAGE DeriveGeneric #-}
--- {-# LANGUAGE OverloadedStrings #-}
--- {-# OPTIONS_GHC -fplugin PlutusTx.Plugin #-}
-
--- module Main where
-
--- import PlutusTx (compile, unsafeFromBuiltinData, CompiledCode, unstableMakeIsData)
--- import PlutusTx.Prelude hiding (($), (<>))
--- import Plutus.V2.Ledger.Contexts 
---     ( txSignedBy
---     , ScriptContext(..)
---     , TxInfo(..)
---     , TxOut(..)
---     , TxInInfo(..)
---     , scriptContextPurpose
---     , txInInfoResolved
---     , ScriptPurpose(..)
---     , TxOutRef(..)
---     )
--- import Plutus.V2.Ledger.Api 
---     ( BuiltinData
---     , Validator
---     , mkValidatorScript
---     , POSIXTime
---     , PubKeyHash
---     , ValidatorHash
---     , Address(..)
---     , Credential(..)
---     )
--- import Plutus.V1.Ledger.Interval (contains, to, from)
--- import Plutus.V1.Ledger.Value (Value, flattenValue, adaSymbol, adaToken)
-
--- import Prelude (IO, Show, print, putStrLn, FilePath, ($), (<>))
--- import GHC.Generics (Generic)
--- import qualified Data.ByteString.Lazy as LBS
--- import qualified Data.ByteString.Short as SBS
--- import Codec.Serialise (serialise)
--- import Cardano.Api
---     ( writeFileTextEnvelope
---     , displayError
---     , PlutusScriptV2
---     )
--- import Cardano.Api.Shelley (PlutusScript (..))
--- import qualified Data.List as L   -- <- qualified import to fix ambiguity
-
--- -- ===========================
--- -- | Donation parameters     |
--- -- ===========================
-
--- {-# INLINABLE minDonation #-}
--- minDonation :: Integer
--- minDonation = 1000000  -- 1 ADA in lovelace
-
--- {-# INLINABLE getLovelace #-}
--- getLovelace :: Value -> Integer
--- getLovelace v =
---     foldl (\acc (cs, tn, amt) -> if cs == adaSymbol && tn == adaToken then acc + amt else acc) 0 (flattenValue v)
-
--- {-# INLINABLE addrValidatorHash #-}
--- addrValidatorHash :: Address -> Maybe ValidatorHash
--- addrValidatorHash (Address (ScriptCredential vh) _) = Just vh
--- addrValidatorHash _                                 = Nothing
-
--- {-# INLINABLE ownValidatorHash #-}
--- ownValidatorHash :: ScriptContext -> ValidatorHash
--- ownValidatorHash ctx = 
---     case scriptContextPurpose ctx of
---         Spending txOutRef ->
---             let info = scriptContextTxInfo ctx
---                 mInput = L.find (\i -> txInInfoOutRef i == txOutRef) (txInfoInputs info)
---             in case mInput of
---                 Just txIn -> case addrValidatorHash (txOutAddress $ txInInfoResolved txIn) of
---                                Just h  -> h
---                                Nothing -> traceError "Invalid script input"
---                 Nothing -> traceError "Input not found"
---         _ -> traceError "Not spending from script"
-
--- {-# INLINABLE donationAmount #-}
--- donationAmount :: ScriptContext -> Integer
--- donationAmount ctx =
---     let
---         info :: TxInfo
---         info = scriptContextTxInfo ctx
---         ownHash = ownValidatorHash ctx
-
---         outputsToScript :: [Value]
---         outputsToScript = [ txOutValue o | o <- txInfoOutputs info
---                                          , Just h <- [addrValidatorHash $ txOutAddress o]
---                                          , h == ownHash ]
---     in sum (map getLovelace outputsToScript)
-
--- -- ===========================
--- -- | Custom On-chain Types   |
--- -- ===========================
-
--- data CampaignDatum = CampaignDatum
---     { beneficiary  :: PubKeyHash
---     , deadline     :: POSIXTime
---     , goal         :: Integer
---     , totalDonated :: Integer
---     } deriving (Show, Generic)
-
--- data CampaignActions = Donate | Withdraw | Refund
---     deriving (Show, Generic)
-
--- PlutusTx.unstableMakeIsData ''CampaignDatum
--- PlutusTx.unstableMakeIsData ''CampaignActions
-
--- -- ===========================
--- -- | Validator Logic         |
--- -- ===========================
-
--- {-# INLINABLE mkCampaignValidator #-}
--- mkCampaignValidator :: CampaignDatum -> CampaignActions -> ScriptContext -> Bool
--- mkCampaignValidator dat red ctx =
---     case red of
---         Donate   -> traceIfFalse "Too late to donate or amount too low" canDonate
---         Withdraw -> traceIfFalse "Not allowed to withdraw" canWithdraw
---         Refund   -> traceIfFalse "Cannot refund" canRefund
---   where
---     info :: TxInfo
---     info = scriptContextTxInfo ctx
-
---     canDonate :: Bool
---     canDonate = to (deadline dat) `contains` txInfoValidRange info &&
---                 donationAmount ctx >= minDonation
-
---     canWithdraw :: Bool
---     canWithdraw = txSignedBy info (beneficiary dat) &&
---                   from (deadline dat) `contains` txInfoValidRange info
-
---     canRefund :: Bool
---     canRefund = from (deadline dat) `contains` txInfoValidRange info &&
---                 totalDonated dat < goal dat
-
--- {-# INLINABLE wrap #-}
--- wrap :: BuiltinData -> BuiltinData -> BuiltinData -> ()
--- wrap d r c =
---     let dat = unsafeFromBuiltinData d
---         red = unsafeFromBuiltinData r
---         ctx = unsafeFromBuiltinData c
---     in if mkCampaignValidator dat red ctx then () else error ()
-
--- compiledCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> ())
--- compiledCode = $$(compile [|| wrap ||])
-
--- validator :: Validator
--- validator = mkValidatorScript compiledCode
-
--- -- ===========================
--- -- | Write Validator to File |
--- -- ===========================
-
--- writeValidator :: FilePath -> Validator -> IO ()
--- writeValidator file validator = do
---     let scriptSerialised = serialise validator
---         scriptShort = SBS.toShort . LBS.toStrict $ scriptSerialised
---         script :: PlutusScript PlutusScriptV2
---         script = PlutusScriptSerialised scriptShort
---     result <- writeFileTextEnvelope file Nothing script
---     case result of
---         Left err -> print (displayError err)
---         Right () -> putStrLn ("Wrote validator to: " <> file)
-
--- -- ===========================
--- -- | Main                    |
--- -- ===========================
-
--- main :: IO ()
--- main = do
---     putStrLn "Validator compiled successfully!"
---     writeValidator "campaign-validator.plutus" validator
-
-{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fplugin PlutusTx.Plugin #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
 
-import PlutusTx (compile, unsafeFromBuiltinData, CompiledCode, unstableMakeIsData)
-import PlutusTx.Prelude hiding (($), (<>))
-import Plutus.V2.Ledger.Contexts 
-    ( txSignedBy
+--------------------------------------------------------------------------------
+-- IMPORTS
+--------------------------------------------------------------------------------
+
+import Codec.Serialise (serialise)
+import qualified Data.ByteString.Lazy      as LBS
+import qualified Data.ByteString.Short     as SBS
+
+import Cardano.Api (writeFileTextEnvelope, displayError)
+import Cardano.Api.Shelley
+    ( PlutusScript (..)
+    , PlutusScriptV2
+    )
+
+import PlutusTx
+import PlutusTx.Prelude hiding (($), (<>), Show)
+import Prelude (IO, FilePath, print, putStrLn, Show, ($), (<>))
+
+import Plutus.V2.Ledger.Api
+    ( Validator
     , ScriptContext(..)
     , TxInfo(..)
     , TxOut(..)
-    , TxInInfo(..)
-    , scriptContextPurpose
-    , txInInfoResolved
-    , ScriptPurpose(..)
-    , TxOutRef(..)
-    , findDatum
-    )
-import Plutus.V2.Ledger.Api 
-    ( BuiltinData
-    , Validator
-    , mkValidatorScript
-    , POSIXTime
-    , PubKeyHash
-    , ValidatorHash
-    , Address(..)
-    , Credential(..)
     , Datum(..)
-    , DatumHash
-    , OutputDatum(..)
+    , Value
+    , PubKeyHash
+    , POSIXTime
+    , ScriptPurpose(..)
+    , mkValidatorScript
+    , OutputDatum (..)
+    , unValidatorScript
+    , TxOutRef
     )
-import Plutus.V1.Ledger.Interval (contains, to, from)
-import Plutus.V1.Ledger.Value (Value, flattenValue, adaSymbol, adaToken)
 
-import Prelude (IO, Show, print, putStrLn, FilePath, ($), (<>))
-import GHC.Generics (Generic)
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Short as SBS
-import Codec.Serialise (serialise)
-import Cardano.Api
-    ( writeFileTextEnvelope
-    , displayError
-    , PlutusScriptV2
+import Plutus.V2.Ledger.Contexts
+    ( txSignedBy
+    , valuePaidTo
+    , getContinuingOutputs
+    , txInInfoOutRef
+    , txInInfoResolved
     )
-import Cardano.Api.Shelley (PlutusScript (..))
-import qualified Data.List as L
 
--- ===========================
--- | Donation parameters     |
--- ===========================
+import qualified Plutus.V1.Ledger.Interval as Interval
+import qualified Plutus.V1.Ledger.Value    as Value
+import PlutusTx (fromBuiltinData)
 
-{-# INLINABLE minDonation #-}
-minDonation :: Integer
-minDonation = 1000000  -- 1 ADA in lovelace
-
-{-# INLINABLE getLovelace #-}
-getLovelace :: Value -> Integer
-getLovelace v =
-    foldl (\acc (cs, tn, amt) -> if cs == adaSymbol && tn == adaToken then acc + amt else acc) 0 (flattenValue v)
-
-{-# INLINABLE addrValidatorHash #-}
-addrValidatorHash :: Address -> Maybe ValidatorHash
-addrValidatorHash (Address (ScriptCredential vh) _) = Just vh
-addrValidatorHash _                                 = Nothing
-
-{-# INLINABLE ownValidatorHash #-}
-ownValidatorHash :: ScriptContext -> ValidatorHash
-ownValidatorHash ctx = 
-    case scriptContextPurpose ctx of
-        Spending txOutRef ->
-            let info = scriptContextTxInfo ctx
-                mInput = L.find (\i -> txInInfoOutRef i == txOutRef) (txInfoInputs info)
-            in case mInput of
-                Just txIn -> case addrValidatorHash (txOutAddress $ txInInfoResolved txIn) of
-                               Just h  -> h
-                               Nothing -> traceError "Invalid script input"
-                Nothing -> traceError "Input not found"
-        _ -> traceError "Not spending from script"
-
-{-# INLINABLE donationAmount #-}
-donationAmount :: ScriptContext -> Integer
-donationAmount ctx =
-    let
-        info :: TxInfo
-        info = scriptContextTxInfo ctx
-        ownHash = ownValidatorHash ctx
-
-        outputsToScript :: [Value]
-        outputsToScript = [ txOutValue o | o <- txInfoOutputs info
-                                         , Just h <- [addrValidatorHash $ txOutAddress o]
-                                         , h == ownHash ]
-    in sum (map getLovelace outputsToScript)
-
--- ===========================
--- | Custom On-chain Types   |
--- ===========================
+--------------------------------------------------------------------------------
+-- DATUM
+--------------------------------------------------------------------------------
 
 data CampaignDatum = CampaignDatum
-    { beneficiary  :: PubKeyHash
-    , deadline     :: POSIXTime
-    , goal         :: Integer
-    , totalDonated :: Integer
-    } deriving (Show, Generic)
+  { owner        :: PubKeyHash
+  , campaignGoal :: Integer     -- minimum target (lovelace)
+  , deadline     :: POSIXTime   -- no donations after this
+  , donorCount   :: Integer     -- number of distinct donations
+  , topDonor     :: PubKeyHash  -- highest donor
+  , topDonation  :: Integer     -- highest single donation
+  }
+  deriving Show
 
-data CampaignActions = Donate | Withdraw | Refund
-    deriving (Show, Generic)
-
+-- Derive on-chain data conversions
 PlutusTx.unstableMakeIsData ''CampaignDatum
-PlutusTx.unstableMakeIsData ''CampaignActions
+-- The above generates ToData and FromData. It also supplies UnsafeFromData machinery used on-chain.
 
--- ===========================
--- | On-chain equality       |
--- ===========================
+--------------------------------------------------------------------------------
+-- REDEEMER
+--------------------------------------------------------------------------------
 
-{-# INLINABLE eqCampaignDatum #-}
-eqCampaignDatum :: CampaignDatum -> CampaignDatum -> Bool
-eqCampaignDatum d1 d2 =
-    beneficiary d1 == beneficiary d2 &&
-    deadline d1    == deadline d2 &&
-    goal d1        == goal d2 &&
-    totalDonated d1 == totalDonated d2
+data DonationRedeemer = Donate | Withdraw
+  deriving Show
 
--- ===========================
--- | Validator Logic         |
--- ===========================
+PlutusTx.makeIsDataIndexed ''DonationRedeemer [ ('Donate, 0), ('Withdraw, 1) ]
 
-{-# INLINABLE mkCampaignValidator #-}
-mkCampaignValidator :: CampaignDatum -> CampaignActions -> ScriptContext -> Bool
-mkCampaignValidator dat red ctx =
-    case red of
-        Donate   -> traceIfFalse "Too late to donate or amount too low" canDonate &&
-                    traceIfFalse "Output datum not updated correctly" datumUpdated
-        Withdraw -> traceIfFalse "Not allowed to withdraw" canWithdraw
-        Refund   -> traceIfFalse "Cannot refund" canRefund
+--------------------------------------------------------------------------------
+-- VALIDATOR LOGIC
+--------------------------------------------------------------------------------
+
+{-# INLINABLE findScriptInput #-}
+-- Find the UTxO input that spends from this script (the spent script input) and return (TxOut, value)
+findScriptInput :: ScriptContext -> Maybe (TxOut, Value)
+findScriptInput ctx =
+    case scriptContextPurpose ctx of
+        Spending txOutRef ->
+            let info   = scriptContextTxInfo ctx
+                inputs = txInfoInputs info
+            in case find (\i -> txInInfoOutRef i == txOutRef) inputs of
+                Just txIn ->
+                    let out = txInInfoResolved txIn
+                    in Just (out, txOutValue out)
+                Nothing -> Nothing
+        _ -> Nothing
+
+{-# INLINABLE validateDonate #-}
+validateDonate :: CampaignDatum -> ScriptContext -> Bool
+validateDonate oldDat ctx =
+    traceIfFalse "Donate: must be before or at deadline" beforeDeadline &&
+    traceIfFalse "Donate: must include a signer (donor)" hasSigner &&
+    traceIfFalse "Donate: must produce exactly one continuing script output" oneContinuing &&
+    traceIfFalse "Donate: new datum validation failed" newDatumOk &&
+    traceIfFalse "Donate: donation must be > 0" donationPositive
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
-    ownHash = ownValidatorHash ctx
 
-    -- Donation logic
-    canDonate :: Bool
-    canDonate = to (deadline dat) `contains` txInfoValidRange info &&
-                donationAmount ctx >= minDonation
+    -- 1. before deadline: txInfoValidRange must be contained by (to deadline)
+    beforeDeadline :: Bool
+    beforeDeadline = Interval.to (deadline oldDat) `Interval.contains` txInfoValidRange info
 
-    updatedDatum :: CampaignDatum
-    updatedDatum = dat { totalDonated = totalDonated dat + donationAmount ctx }
+    -- 2. pick a donor from signatories (require at least one signer)
+    signers :: [PubKeyHash]
+    signers = txInfoSignatories info
 
-    datumUpdated :: Bool
-    datumUpdated =
-        let outputs = [ o | o <- txInfoOutputs info
-                          , Just h <- [addrValidatorHash $ txOutAddress o]
-                          , h == ownHash ]
-        in case outputs of
-            [o] -> case txOutDatum o of
-                     OutputDatumHash dh -> case findDatum dh info of
-                                              Just (Datum d') -> eqCampaignDatum (unsafeFromBuiltinData d') updatedDatum
-                                              Nothing         -> False
-                     _ -> False
-            _   -> False
+    hasSigner :: Bool
+    hasSigner = not (null signers)
 
-    -- Withdraw logic
-    canWithdraw :: Bool
-    canWithdraw = txSignedBy info (beneficiary dat) &&
-                  from (deadline dat) `contains` txInfoValidRange info &&
-                  totalDonated dat >= goal dat
+    donor :: PubKeyHash
+    donor = case signers of
+              (s:_) -> s
+              []    -> traceError "No signer found"
 
-    -- Refund logic
-    canRefund :: Bool
-    canRefund = from (deadline dat) `contains` txInfoValidRange info &&
-                totalDonated dat < goal dat
+    -- 3. continuing outputs (script outputs) - there must be exactly one (the updated campaign)
+    continuing :: [TxOut]
+    continuing = getContinuingOutputs ctx
 
-{-# INLINABLE wrap #-}
-wrap :: BuiltinData -> BuiltinData -> BuiltinData -> ()
-wrap d r c =
-    let dat = unsafeFromBuiltinData d
-        red = unsafeFromBuiltinData r
-        ctx = unsafeFromBuiltinData c
-    in if mkCampaignValidator dat red ctx then () else error ()
+    oneContinuing :: Bool
+    oneContinuing = case continuing of
+                      [_] -> True
+                      _   -> False
 
-compiledCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> ())
-compiledCode = $$(compile [|| wrap ||])
+    -- 4. the spent script input value and the continuing output value -> donation = new - old
+    scriptValue :: Integer
+    scriptValue = case findScriptInput ctx of
+                    Just (_, v) -> Value.valueOf v Value.adaSymbol Value.adaToken
+                    Nothing     -> traceError "Could not find script input"
+
+    newOutput :: TxOut
+    newOutput = case continuing of
+                  [o] -> o
+                  _   -> traceError "Expected exactly one continuing output"
+
+    newValue :: Integer
+    newValue = Value.valueOf (txOutValue newOutput) Value.adaSymbol Value.adaToken
+
+    donationAmount :: Integer
+    donationAmount = newValue - scriptValue
+
+    donationPositive :: Bool
+    donationPositive = donationAmount > 0
+
+    -- 5. read new datum from continuing output (must be inline datum)
+    newDatum :: CampaignDatum
+    newDatum =
+      case txOutDatum newOutput of
+        OutputDatum (Datum d) ->
+            case PlutusTx.fromBuiltinData d of
+              Just cd -> cd
+              Nothing -> traceError "Bad datum in continuing output"
+        OutputDatumHash _ -> traceError "Expected inline datum (not hash)"
+        NoOutputDatum     -> traceError "Missing datum in continuing output"
+
+    -- 6. Validate that fields were updated correctly:
+    --    - owner, campaignGoal, deadline must be unchanged
+    --    - donorCount increased by 1
+    --    - topDonor/topDonation updated if donation > old topDonation, otherwise unchanged
+    newDatumOk :: Bool
+    newDatumOk =
+         owner newDatum        == owner oldDat
+      && campaignGoal newDatum == campaignGoal oldDat
+      && deadline newDatum     == deadline oldDat
+      && donorCount newDatum   == donorCount oldDat + 1
+      && if donationAmount > topDonation oldDat
+            then topDonation newDatum == donationAmount
+                 && topDonor newDatum == donor
+            else topDonation newDatum == topDonation oldDat
+                 && topDonor newDatum == topDonor oldDat
+
+{-# INLINABLE validateWithdraw #-}
+validateWithdraw :: CampaignDatum -> ScriptContext -> Bool
+validateWithdraw dat ctx =
+    traceIfFalse "Withdraw: must be after deadline" afterDeadline &&
+    traceIfFalse "Withdraw: only owner can withdraw" signedByOwner &&
+    traceIfFalse "Withdraw: must reach goal" goalReached &&
+    traceIfFalse "Withdraw: no continuing outputs allowed" noContinuing
+  where
+    info :: TxInfo
+    info = scriptContextTxInfo ctx
+
+    -- after deadline: txInfoValidRange must be contained by (from deadline)
+    afterDeadline :: Bool
+    afterDeadline = Interval.from (deadline dat) `Interval.contains` txInfoValidRange info
+
+    signedByOwner :: Bool
+    signedByOwner = txSignedBy info (owner dat)
+
+    -- Total paid to owner in this transaction
+    paidToOwner :: Integer
+    paidToOwner = let v = valuePaidTo info (owner dat)
+                  in Value.valueOf v Value.adaSymbol Value.adaToken
+
+    goalReached :: Bool
+    goalReached = paidToOwner >= campaignGoal dat
+
+    noContinuing :: Bool
+    noContinuing = null (getContinuingOutputs ctx)
+
+{-# INLINABLE mkDonationValidator #-}
+mkDonationValidator :: CampaignDatum -> DonationRedeemer -> ScriptContext -> Bool
+mkDonationValidator dat red ctx =
+  case red of
+    Donate   -> validateDonate dat ctx
+    Withdraw -> validateWithdraw dat ctx
+
+--------------------------------------------------------------------------------
+-- WRAPPER / COMPILATION
+--------------------------------------------------------------------------------
+
+{-# INLINABLE wrapped #-}
+wrapped :: BuiltinData -> BuiltinData -> BuiltinData -> ()
+wrapped d r c =
+    if mkDonationValidator
+         (unsafeFromBuiltinData d)
+         (unsafeFromBuiltinData r)
+         (unsafeFromBuiltinData c)
+    then ()
+    else error ()
 
 validator :: Validator
-validator = mkValidatorScript compiledCode
+validator = mkValidatorScript $$(compile [|| wrapped ||])
 
--- ===========================
--- | Write Validator to File |
--- ===========================
+--------------------------------------------------------------------------------
+-- WRITE SCRIPT (to .plutus)
+--------------------------------------------------------------------------------
 
 writeValidator :: FilePath -> Validator -> IO ()
-writeValidator file validator = do
-    let scriptSerialised = serialise validator
-        scriptShort = SBS.toShort . LBS.toStrict $ scriptSerialised
-        script :: PlutusScript PlutusScriptV2
-        script = PlutusScriptSerialised scriptShort
-    result <- writeFileTextEnvelope file Nothing script
+writeValidator file val = do
+    let script = unValidatorScript val
+        bs     = serialise script
+        sh     = SBS.toShort (LBS.toStrict bs)
+        scr    = PlutusScriptSerialised sh :: PlutusScript PlutusScriptV2
+    result <- writeFileTextEnvelope file Nothing scr
     case result of
-        Left err -> print (displayError err)
-        Right () -> putStrLn ("Wrote validator to: " <> file)
+        Left err  -> print (displayError err)
+        Right ()  -> putStrLn ("Wrote script to: " <> file)
 
--- ===========================
--- | Main                    |
--- ===========================
+--------------------------------------------------------------------------------
+-- MAIN
+--------------------------------------------------------------------------------
 
 main :: IO ()
 main = do
-    putStrLn "Validator compiled successfully!"
-    writeValidator "./assets/campaign-validator.plutus" validator
+    putStrLn "Compiled Donation smart contract (Plutus V2)"
+    writeValidator "./assets/donation.plutus" validator

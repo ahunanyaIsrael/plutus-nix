@@ -21,5 +21,6 @@ allTests =
     , CGTimeSpec.tests
     , CGPlutusUtilsSpec.tests
     , DemoSpec.tests
-    , MintSpec.tests             
+    , MintSpec.tests 
+    , OffChain.tests            
     ]
